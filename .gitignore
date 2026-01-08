@@ -1,0 +1,24 @@
+# Dependencies
+/vendor/
+
+# Uploads
+/uploads/*
+!/uploads/.htaccess
+!/uploads/.gitkeep
+
+# Configuration (if sensitive)
+# config.php
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
