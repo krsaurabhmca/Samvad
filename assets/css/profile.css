@@ -28,6 +28,22 @@ body {
     flex-shrink: 0;
 }
 
+.profile-header-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.profile-header-tagline {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin: 0;
+}
+
 .back-btn {
     color: #fff;
     text-decoration: none;

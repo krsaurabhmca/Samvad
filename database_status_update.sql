@@ -1,8 +1,8 @@
--- Add status_text field to users table for WhatsApp-like status
+-- Add status_text field to users table for Samvad status feature
 ALTER TABLE `users` 
 ADD COLUMN `status_text` VARCHAR(139) NULL AFTER `status`;
 
--- Create user_status table for status messages (like WhatsApp Stories/Status)
+-- Create user_status table for status messages (like Samvad Stories/Status)
 CREATE TABLE IF NOT EXISTS `user_status` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) NOT NULL,

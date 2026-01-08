@@ -12,7 +12,8 @@ if (!$user) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Clone - Chat</title>
+    <title>Samvad - Simple Business Chat</title>
+    <link rel="icon" type="image/png" href="assets/images/logo.png">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -27,6 +28,8 @@ if (!$user) {
                         <span class="user-name"><?php echo htmlspecialchars($user['name']); ?></span>
                         <?php if (!empty($user['status_text'])): ?>
                             <span class="user-status-text" style="font-size: 12px; color: #667781;"><?php echo htmlspecialchars($user['status_text']); ?></span>
+                        <?php else: ?>
+                            <span class="user-status-text" style="font-size: 11px; color: #667781; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase;">Simple Business Chat</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -65,8 +68,9 @@ if (!$user) {
         <!-- Chat Area -->
         <div class="chat-area">
             <div class="empty-chat" id="emptyChat">
-                <div class="empty-chat-icon">💬</div>
+                <img src="assets/images/logo.png" alt="Samvad" class="empty-chat-logo">
                 <h2>Select a chat to start messaging</h2>
+                <p class="empty-chat-tagline">Simple Business Chat</p>
             </div>
             
             <div class="chat-window" id="chatWindow" style="display: none;">
@@ -190,24 +194,26 @@ if (!$user) {
             <div class="modal-body">
                 <form id="createStoryForm">
                     <div class="form-group">
-                        <label>Add Photo</label>
-                        <input type="file" id="storyImageInput" accept="image/jpeg,image/jpg,image/png,image/gif,image/webp" style="display: none;">
+                        <label>Add Photos (You can select multiple)</label>
+                        <input type="file" id="storyImageInput" accept="image/jpeg,image/jpg,image/png,image/gif,image/webp" multiple style="display: none;">
                         <button type="button" class="btn btn-secondary" id="selectImageBtn" style="width: 100%; margin-bottom: 16px;">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="margin-right: 8px;">
                                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                                 <circle cx="8.5" cy="8.5" r="1.5"/>
                                 <polyline points="21 15 16 10 5 21"/>
                             </svg>
-                            Select Photo
+                            Select Photos
                         </button>
-                        <div id="storyImagePreview" style="display: none; margin-bottom: 16px;">
-                            <img id="storyImagePreviewImg" src="" alt="Preview" style="max-width: 100%; max-height: 300px; border-radius: 8px;">
-                            <button type="button" id="removeImageBtn" class="btn btn-danger" style="margin-top: 8px; width: 100%;">Remove Photo</button>
+                        <div id="storyImagesPreview" style="display: none; margin-bottom: 16px;">
+                            <div id="storyImagesList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-bottom: 12px;"></div>
+                            <small class="form-hint" style="display: block; margin-top: 8px; color: #667781;">
+                                <span id="storyImageCount">0</span> photo(s) selected
+                            </small>
                         </div>
                     </div>
                     
                     <div class="form-group">
-                        <label>Text</label>
+                        <label>Text (Optional - Applied to all stories if provided)</label>
                         <textarea id="storyTextInput" rows="4" placeholder="What's on your mind?" maxlength="500"></textarea>
                         <small class="form-hint">
                             <span id="storyCharCount">0</span>/500 characters
@@ -215,11 +221,11 @@ if (!$user) {
                     </div>
                     
                     <div class="form-group">
-                        <label>Link (Optional)</label>
+                        <label>Link (Optional - Applied to all stories if provided)</label>
                         <input type="url" id="storyLinkInput" placeholder="https://example.com">
                     </div>
                     
-                    <button type="submit" class="btn btn-primary" style="width: 100%;">Post Story</button>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Post <span id="storySubmitCount">Story</span></button>
                 </form>
             </div>
         </div>

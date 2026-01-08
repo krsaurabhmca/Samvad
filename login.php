@@ -72,15 +72,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - WhatsApp Clone</title>
+    <title>Login - Samvad - Simple Business Chat</title>
+    <link rel="icon" type="image/png" href="assets/images/logo.png">
     <link rel="stylesheet" href="assets/css/auth.css">
 </head>
 <body>
     <div class="auth-container">
         <div class="auth-box">
             <div class="auth-header">
-                <h1>WhatsApp Clone</h1>
-                <p>Connect with your friends</p>
+                <img src="assets/images/logo.png" alt="Samvad" class="auth-logo">
+                <h1>Samvad</h1>
+                <p class="auth-tagline">Simple Business Chat</p>
             </div>
             
             <?php if ($error): ?>

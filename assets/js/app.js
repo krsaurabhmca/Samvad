@@ -11,6 +11,8 @@ const App = {
     storyProgressInterval: null,
     storyStartTime: null,
     storyDuration: 5000, // 5 seconds per story
+    isStoryPaused: false,
+    pausedElapsed: null,
     typingTimeout: null,
     pendingAttachments: [],
     
@@ -156,6 +158,8 @@ const App = {
         
         // Clear previous timers
         this.clearStoryTimers();
+        this.isStoryPaused = false;
+        this.pausedElapsed = null;
         
         this.currentStoryIndex = index;
         const story = this.currentStoryGroup.stories[index];
@@ -234,35 +238,84 @@ const App = {
             const $bar = $('<div class="story-progress-bar"></div>');
             if (i < this.currentStoryIndex) {
                 $bar.addClass('completed');
+                $bar.css('--progress', '100%');
             } else if (i === this.currentStoryIndex) {
                 $bar.addClass('active');
+                $bar.css('--progress', '0%');
+            } else {
+                $bar.css('--progress', '0%');
             }
             $container.append($bar);
         }
     },
     
     startStoryTimer: function() {
+        if (this.isStoryPaused) return;
+        
         this.storyStartTime = Date.now();
         const $activeBar = $('#storyProgressContainer .story-progress-bar').eq(this.currentStoryIndex);
+        $activeBar.removeClass('paused');
         
-        // Update progress every 50ms for smooth animation
+        // Update progress every 16ms (~60fps) for smooth animation
         this.storyProgressInterval = setInterval(() => {
-            if (!this.currentStory || !this.storyStartTime) return;
+            if (!this.currentStory || !this.storyStartTime || this.isStoryPaused) return;
             
             const elapsed = Date.now() - this.storyStartTime;
             const progress = Math.min((elapsed / this.storyDuration) * 100, 100);
             
-            $activeBar.css('width', progress + '%');
+            // Update the ::before pseudo-element width using CSS variable
+            if ($activeBar.length && $activeBar[0]) {
+                $activeBar[0].style.setProperty('--progress', progress + '%');
+            }
             
             if (progress >= 100) {
                 this.advanceToNextStory();
             }
-        }, 50);
+        }, 16);
         
         // Auto-advance after duration
         this.storyAutoAdvanceTimer = setTimeout(() => {
-            this.advanceToNextStory();
+            if (!this.isStoryPaused) {
+                this.advanceToNextStory();
+            }
         }, this.storyDuration);
+    },
+    
+    pauseStory: function() {
+        if (!this.currentStory) return;
+        
+        this.isStoryPaused = true;
+        const $activeBar = $('#storyProgressContainer .story-progress-bar').eq(this.currentStoryIndex);
+        $activeBar.addClass('paused');
+        
+        // Save elapsed time
+        if (this.storyStartTime) {
+            this.pausedElapsed = Date.now() - this.storyStartTime;
+        }
+        
+        this.clearStoryTimers();
+    },
+    
+    resumeStory: function() {
+        if (!this.currentStory || !this.isStoryPaused) return;
+        
+        this.isStoryPaused = false;
+        
+        // Adjust start time to account for paused duration
+        if (this.pausedElapsed) {
+            this.storyStartTime = Date.now() - this.pausedElapsed;
+            this.pausedElapsed = null;
+        }
+        
+        this.startStoryTimer();
+    },
+    
+    toggleStoryPause: function() {
+        if (this.isStoryPaused) {
+            this.resumeStory();
+        } else {
+            this.pauseStory();
+        }
     },
     
     clearStoryTimers: function() {
@@ -274,7 +327,10 @@ const App = {
             clearInterval(this.storyProgressInterval);
             this.storyProgressInterval = null;
         }
-        this.storyStartTime = null;
+        // Don't reset storyStartTime when pausing
+        if (!this.isStoryPaused) {
+            this.storyStartTime = null;
+        }
     },
     
     advanceToNextStory: function() {
@@ -289,6 +345,8 @@ const App = {
     
     closeStoryViewer: function() {
         this.clearStoryTimers();
+        this.isStoryPaused = false;
+        this.pausedElapsed = null;
         $('#storyViewerModal').removeClass('active');
         $('#storyReplyArea').hide();
         $('#storyReplyInput').val('');
@@ -503,13 +561,15 @@ const App = {
                             </div>
                         `;
                     } else {
+                        const fileIcon = this.getFileIcon(att.file_name, att.file_type);
+                        const fileIconClass = this.getFileIconClass(att.file_name, att.file_type);
                         attachmentsHtml += `
                             <div class="message-attachment">
                                 <a href="${att.file_url}" target="_blank" class="file-attachment">
-                                    <div class="file-icon-large">📎</div>
+                                    <div class="file-icon-large ${fileIconClass}">${fileIcon}</div>
                                     <div class="file-info">
                                         <div class="file-info-name">${this.escapeHtml(att.file_name)}</div>
-                                        <div class="file-info-size">${this.formatFileSize(att.file_size)}</div>
+                                        <div class="file-info-size">${this.formatFileSize(att.file_size || 0)}</div>
                                     </div>
                                 </a>
                             </div>
@@ -839,6 +899,15 @@ const App = {
             this.closeStoryViewer();
         });
         
+        // Pause/resume on story content click
+        $(document).on('click', '#storyViewerContent', (e) => {
+            // Don't toggle if clicking on a link or its children
+            if ($(e.target).is('a') || $(e.target).closest('a').length > 0) return;
+            // Don't toggle if clicking on image (allow zoom/view)
+            if ($(e.target).is('img')) return;
+            this.toggleStoryPause();
+        });
+        
         // Story viewers modal
         $('#viewersBtn').on('click', (e) => {
             e.stopPropagation();
@@ -889,20 +958,38 @@ const App = {
         });
         
         $('#storyImageInput').on('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    $('#storyImagePreviewImg').attr('src', event.target.result);
-                    $('#storyImagePreview').show();
-                };
-                reader.readAsDataURL(file);
+            const files = e.target.files;
+            if (files && files.length > 0) {
+                const fileArray = Array.from(files);
+                
+                // Process each file
+                fileArray.forEach((file) => {
+                    // Check file size (max 10MB per image)
+                    if (file.size > 10 * 1024 * 1024) {
+                        alert(`File "${file.name}" is too large. Maximum size is 10MB.`);
+                        return;
+                    }
+                    
+                    // Check if it's an image
+                    if (!file.type.startsWith('image/')) {
+                        alert(`File "${file.name}" is not an image.`);
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        this.pendingStoryImages.push({
+                            file: file,
+                            preview: event.target.result
+                        });
+                        this.renderStoryImagesPreview();
+                    };
+                    reader.readAsDataURL(file);
+                });
+                
+                // Reset input to allow selecting same files again
+                $('#storyImageInput').val('');
             }
-        });
-        
-        $('#removeImageBtn').on('click', () => {
-            $('#storyImageInput').val('');
-            $('#storyImagePreview').hide();
         });
         
         $('#storyTextInput').on('input', (e) => {
@@ -1614,9 +1701,11 @@ const App = {
                     </div>
                 `;
             } else {
+                const fileIcon = this.getFileIcon(att.file_name, att.file_type);
+                const fileIconClass = this.getFileIconClass(att.file_name, att.file_type);
                 previewHtml = `
                     <div class="attachment-item">
-                        <div class="file-icon">📎</div>
+                        <div class="file-icon ${fileIconClass}">${fileIcon}</div>
                         <div class="file-name">${this.escapeHtml(att.file_name)}</div>
                         <button class="attachment-remove" data-index="${index}">&times;</button>
                     </div>
@@ -1641,23 +1730,205 @@ const App = {
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     },
     
+    getFileIcon: function(fileName, fileType) {
+        const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
+        
+        // PDF icon
+        if (ext === 'pdf' || fileType === 'pdf') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="9" y1="12" x2="15" y2="12"/>
+                    <line x1="9" y1="16" x2="13" y2="16"/>
+                </svg>
+            `;
+        }
+        
+        // Word/DOC icon
+        if (ext === 'doc' || ext === 'docx' || fileType === 'doc' || fileType === 'docx') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <path d="M10 9H8M10 13H8M10 17H8M14 9h2M14 13h2M14 17h2"/>
+                </svg>
+            `;
+        }
+        
+        // Excel/XLS icon
+        if (ext === 'xls' || ext === 'xlsx' || fileType === 'xls' || fileType === 'xlsx') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="9" y1="12" x2="15" y2="18"/>
+                    <line x1="15" y1="12" x2="9" y2="18"/>
+                </svg>
+            `;
+        }
+        
+        // PowerPoint/PPT icon
+        if (ext === 'ppt' || ext === 'pptx' || fileType === 'ppt' || fileType === 'pptx') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <circle cx="15.5" cy="8.5" r="1.5"/>
+                    <path d="M12 14v4M8 16h8"/>
+                </svg>
+            `;
+        }
+        
+        // Text/TXT icon
+        if (ext === 'txt' || fileType === 'txt') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="8" y1="11" x2="16" y2="11"/>
+                    <line x1="8" y1="15" x2="16" y2="15"/>
+                </svg>
+            `;
+        }
+        
+        // ZIP/RAR icon
+        if (ext === 'zip' || ext === 'rar' || ext === '7z' || fileType === 'zip' || fileType === 'rar') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+            `;
+        }
+        
+        // Audio icon
+        if (ext === 'mp3' || ext === 'wav' || ext === 'ogg' || fileType === 'audio') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+            `;
+        }
+        
+        // Video icon
+        if (ext === 'mp4' || ext === 'avi' || ext === 'mkv' || fileType === 'video') {
+            return `
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="23 7 16 12 23 17 23 7"/>
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                </svg>
+            `;
+        }
+        
+        // Default file icon
+        return `
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+            </svg>
+        `;
+    },
+    
+    getFileIconClass: function(fileName, fileType) {
+        const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
+        
+        if (ext === 'pdf' || fileType === 'pdf') return 'pdf';
+        if (ext === 'doc' || ext === 'docx' || fileType === 'doc' || fileType === 'docx') return 'doc';
+        if (ext === 'xls' || ext === 'xlsx' || fileType === 'xls' || fileType === 'xlsx') return 'xls';
+        if (ext === 'ppt' || ext === 'pptx' || fileType === 'ppt' || fileType === 'pptx') return 'ppt';
+        if (ext === 'txt' || fileType === 'txt') return 'txt';
+        if (ext === 'zip' || ext === 'rar' || ext === '7z' || fileType === 'zip' || fileType === 'rar') return 'zip';
+        if (ext === 'mp3' || ext === 'wav' || ext === 'ogg' || fileType === 'audio') return 'audio';
+        if (ext === 'mp4' || ext === 'avi' || ext === 'mkv' || fileType === 'video') return 'video';
+        
+        return 'default';
+    },
+    
+    pendingStoryImages: [],
+    
     resetCreateStoryForm: function() {
         $('#createStoryForm')[0].reset();
-        $('#storyImagePreview').hide();
+        $('#storyImagesPreview').hide();
         $('#storyCharCount').text('0');
         $('#storyImageInput').val('');
+        $('#storyImageCount').text('0');
+        $('#storySubmitCount').text('Story');
+        this.pendingStoryImages = [];
+        this.renderStoryImagesPreview();
+    },
+    
+    renderStoryImagesPreview: function() {
+        const $container = $('#storyImagesList');
+        $container.empty();
+        
+        if (this.pendingStoryImages.length === 0) {
+            $('#storyImagesPreview').hide();
+            return;
+        }
+        
+        $('#storyImagesPreview').show();
+        $('#storyImageCount').text(this.pendingStoryImages.length);
+        $('#storySubmitCount').text(this.pendingStoryImages.length > 1 ? `${this.pendingStoryImages.length} Stories` : 'Story');
+        
+        this.pendingStoryImages.forEach((imageData, index) => {
+            const $item = $(`
+                <div class="story-image-preview-item" data-index="${index}">
+                    <div class="story-image-preview-wrapper">
+                        <img src="${imageData.preview}" alt="Preview ${index + 1}">
+                        <button type="button" class="story-image-remove" data-index="${index}" title="Remove">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="story-image-number">${index + 1}</div>
+                </div>
+            `);
+            
+            $item.find('.story-image-remove').on('click', (e) => {
+                e.stopPropagation();
+                this.pendingStoryImages.splice(index, 1);
+                this.renderStoryImagesPreview();
+            });
+            
+            $container.append($item);
+        });
     },
     
     createStory: function() {
-        const formData = new FormData();
-        const imageFile = $('#storyImageInput')[0].files[0];
         const text = $('#storyTextInput').val().trim();
         const link = $('#storyLinkInput').val().trim();
+        const imageCount = this.pendingStoryImages.length;
         
-        if (!imageFile && !text && !link) {
+        // Validate input
+        if (imageCount === 0 && !text && !link) {
             alert('Please add at least a photo, text, or link');
             return;
         }
+        
+        // Show loading
+        const $submitBtn = $('#createStoryForm button[type="submit"]');
+        const originalText = $submitBtn.html();
+        $submitBtn.prop('disabled', true).html('<span>Posting...</span>');
+        
+        // Create stories sequentially
+        if (imageCount > 0) {
+            // Create one story for each image
+            this.createMultipleStories(0, text, link, imageCount, $submitBtn, originalText);
+        } else {
+            // Create single story with text/link only
+            this.createSingleStory(null, text, link, $submitBtn, originalText);
+        }
+    },
+    
+    createSingleStory: function(imageFile, text, link, $submitBtn, originalText) {
+        const formData = new FormData();
         
         if (imageFile) {
             formData.append('status_image', imageFile);
@@ -1671,11 +1942,6 @@ const App = {
             formData.append('status_link', link);
         }
         
-        // Show loading
-        const $submitBtn = $('#createStoryForm button[type="submit"]');
-        const originalText = $submitBtn.text();
-        $submitBtn.prop('disabled', true).text('Posting...');
-        
         $.ajax({
             url: 'api/stories.php?action=create',
             method: 'POST',
@@ -1687,16 +1953,70 @@ const App = {
                     $('#createStoryModal').removeClass('active');
                     this.resetCreateStoryForm();
                     this.loadStories(); // Reload stories
+                    $submitBtn.prop('disabled', false).html(originalText);
                     alert('Story posted successfully!');
                 } else {
+                    $submitBtn.prop('disabled', false).html(originalText);
                     alert(response.error || 'Failed to create story');
                 }
             },
             error: () => {
+                $submitBtn.prop('disabled', false).html(originalText);
                 alert('Error creating story. Please try again.');
+            }
+        });
+    },
+    
+    createMultipleStories: function(index, text, link, totalCount, $submitBtn, originalText) {
+        if (index >= totalCount) {
+            // All stories created successfully
+            $('#createStoryModal').removeClass('active');
+            this.resetCreateStoryForm();
+            this.loadStories(); // Reload stories
+            $submitBtn.prop('disabled', false).html(originalText);
+            alert(`${totalCount} ${totalCount > 1 ? 'stories' : 'story'} posted successfully!`);
+            return;
+        }
+        
+        // Update progress
+        const progress = Math.floor(((index + 1) / totalCount) * 100);
+        $submitBtn.html(`<span>Posting ${index + 1}/${totalCount} (${progress}%)</span>`);
+        
+        const imageData = this.pendingStoryImages[index];
+        const formData = new FormData();
+        
+        formData.append('status_image', imageData.file);
+        
+        if (text) {
+            formData.append('status_text', text);
+        }
+        
+        if (link) {
+            formData.append('status_link', link);
+        }
+        
+        $.ajax({
+            url: 'api/stories.php?action=create',
+            method: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: (response) => {
+                if (response.success) {
+                    // Create next story
+                    this.createMultipleStories(index + 1, text, link, totalCount, $submitBtn, originalText);
+                } else {
+                    $submitBtn.prop('disabled', false).html(originalText);
+                    alert(`Failed to create story ${index + 1}: ${response.error || 'Unknown error'}`);
+                }
             },
-            complete: () => {
-                $submitBtn.prop('disabled', false).text(originalText);
+            error: (xhr) => {
+                $submitBtn.prop('disabled', false).html(originalText);
+                let errorMsg = 'Error creating story. Please try again.';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                }
+                alert(`Failed to create story ${index + 1}: ${errorMsg}`);
             }
         });
     },

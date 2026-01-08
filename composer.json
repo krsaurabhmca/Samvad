@@ -1,6 +1,6 @@
 {
-    "name": "whatsapp-clone/chat",
-    "description": "WhatsApp Clone Application using PHP, MySQL, and Ratchet",
+    "name": "krsaurabhbca/samvad",
+    "description": "Samvad - Real-Time Chat Application using PHP, MySQL, and Ratchet",
     "type": "project",
     "require": {
         "php": ">=7.4",

@@ -1,6 +1,8 @@
-# Installation Guide
+# Samvad - Installation Guide
 
 ## Step-by-Step Installation
+
+Follow these steps to set up Samvad on your local machine.
 
 ### 1. Database Setup
 

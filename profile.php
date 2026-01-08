@@ -111,7 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profile - WhatsApp Clone</title>
+    <title>Profile - Samvad - Simple Business Chat</title>
+    <link rel="icon" type="image/png" href="assets/images/logo.png">
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="stylesheet" href="assets/css/profile.css">
 </head>
@@ -124,7 +125,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <polyline points="12 19 5 12 12 5"></polyline>
                 </svg>
             </a>
-            <h1>Profile</h1>
+            <div class="profile-header-content">
+                <h1>Profile</h1>
+                <p class="profile-header-tagline">Samvad - Simple Business Chat</p>
+            </div>
         </div>
         
         <div class="profile-content">
