@@ -4,6 +4,8 @@ const App = {
     currentConversation: null,
     conversations: [],
     stories: [],
+    allStoryGroups: [], // All story groups for auto-advance to next person
+    currentStoryGroupIndex: 0, // Index of current story group in allStoryGroups
     currentStoryGroup: null,
     currentStoryIndex: 0,
     currentStory: null,
@@ -15,6 +17,8 @@ const App = {
     pausedElapsed: null,
     typingTimeout: null,
     pendingAttachments: [],
+    replyingTo: null, // Message being replied to
+    forwardingMessage: null, // Message being forwarded
     
     init: function() {
         this.loadUser();
@@ -63,6 +67,7 @@ const App = {
             success: (response) => {
                 if (response.success) {
                     this.stories = response.stories || [];
+                    this.allStoryGroups = this.stories.filter(s => s.stories && s.stories.length > 0);
                     this.renderStories();
                 }
             },
@@ -86,13 +91,19 @@ const App = {
                 <div class="story-avatar-wrapper">
                     <img src="${myStories.user_avatar || 'assets/images/default-avatar.png'}" alt="${this.escapeHtml(myStories.user_name)}" class="story-avatar" onerror="this.src='assets/images/default-avatar.png'">
                     ${!hasMyStories ? '<div class="add-story-icon">+</div>' : ''}
+                    ${hasMyStories ? '<button class="story-delete-btn" title="Delete Story">&times;</button>' : ''}
                 </div>
                 <div class="story-name">${this.escapeHtml(myStories.user_name)}</div>
             </div>
         `);
         
-        $myStory.on('click', () => {
-            if (!hasMyStories) {
+        $myStory.on('click', (e) => {
+            if ($(e.target).hasClass('story-delete-btn') || $(e.target).closest('.story-delete-btn').length) {
+                e.stopPropagation();
+                if (confirm('Are you sure you want to delete your story?')) {
+                    this.deleteStory(myStories.stories[0].id);
+                }
+            } else if (!hasMyStories) {
                 this.openCreateStoryModal();
             } else {
                 this.viewStories(myStories);
@@ -128,6 +139,12 @@ const App = {
     viewStories: function(storyGroup) {
         if (!storyGroup.stories || storyGroup.stories.length === 0) {
             return;
+        }
+        
+        // Find index of this story group in allStoryGroups
+        const groupIndex = this.allStoryGroups.findIndex(sg => sg.user_id == storyGroup.user_id);
+        if (groupIndex !== -1) {
+            this.currentStoryGroupIndex = groupIndex;
         }
         
         this.currentStoryGroup = storyGroup;
@@ -238,12 +255,12 @@ const App = {
             const $bar = $('<div class="story-progress-bar"></div>');
             if (i < this.currentStoryIndex) {
                 $bar.addClass('completed');
-                $bar.css('--progress', '100%');
+                if ($bar[0]) $bar[0].style.setProperty('--progress-width', '100%');
             } else if (i === this.currentStoryIndex) {
                 $bar.addClass('active');
-                $bar.css('--progress', '0%');
+                if ($bar[0]) $bar[0].style.setProperty('--progress-width', '0%');
             } else {
-                $bar.css('--progress', '0%');
+                if ($bar[0]) $bar[0].style.setProperty('--progress-width', '0%');
             }
             $container.append($bar);
         }
@@ -263,9 +280,9 @@ const App = {
             const elapsed = Date.now() - this.storyStartTime;
             const progress = Math.min((elapsed / this.storyDuration) * 100, 100);
             
-            // Update the ::before pseudo-element width using CSS variable
+            // Update the ::after pseudo-element width using CSS variable
             if ($activeBar.length && $activeBar[0]) {
-                $activeBar[0].style.setProperty('--progress', progress + '%');
+                $activeBar[0].style.setProperty('--progress-width', progress + '%');
             }
             
             if (progress >= 100) {
@@ -337,10 +354,31 @@ const App = {
         this.clearStoryTimers();
         
         if (this.currentStoryIndex < this.currentStoryGroup.stories.length - 1) {
+            // Move to next story in current group
             this.showStory(this.currentStoryIndex + 1);
         } else {
-            this.closeStoryViewer();
+            // Move to next person's stories
+            this.advanceToNextPersonStory();
         }
+    },
+    
+    advanceToNextPersonStory: function() {
+        // Find next person's story group (skip own stories)
+        let nextGroupIndex = this.currentStoryGroupIndex + 1;
+        
+        // Find next person's stories (skip own stories)
+        while (nextGroupIndex < this.allStoryGroups.length) {
+            const nextGroup = this.allStoryGroups[nextGroupIndex];
+            if (!nextGroup.is_my_story && nextGroup.stories && nextGroup.stories.length > 0) {
+                this.currentStoryGroupIndex = nextGroupIndex;
+                this.viewStories(nextGroup);
+                return;
+            }
+            nextGroupIndex++;
+        }
+        
+        // No more stories, close viewer
+        this.closeStoryViewer();
     },
     
     closeStoryViewer: function() {
@@ -351,6 +389,10 @@ const App = {
         $('#storyReplyArea').hide();
         $('#storyReplyInput').val('');
         this.currentStory = null;
+        this.currentStoryGroup = null;
+        this.currentStoryGroupIndex = 0;
+        this.currentStoryIndex = 0;
+        $('#storyProgressContainer').empty();
         this.loadStories(); // Reload to update view status
     },
     
@@ -482,8 +524,14 @@ const App = {
             method: 'GET',
             success: (response) => {
                 if (response.success) {
-                    this.renderMessages(response.messages);
+                    this.renderMessages(response.messages || []);
+                } else {
+                    console.error('Failed to load messages:', response.error);
                 }
+            },
+            error: (xhr, status, error) => {
+                console.error('Error loading messages:', status, error);
+                console.error('Response:', xhr.responseText);
             }
         });
     },
@@ -578,6 +626,33 @@ const App = {
                 });
             }
             
+            // Reply preview (if message is a reply) - Clickable to scroll to original
+            let replyHtml = '';
+            if (msg.reply_to && msg.reply_message) {
+                const replySenderId = msg.reply_sender_id;
+                const replySenderName = replySenderId == this.currentUser.id ? 'You' : (msg.reply_sender_name || 'Unknown');
+                const replyMessageText = msg.reply_message.length > 50 ? msg.reply_message.substring(0, 50) + '...' : msg.reply_message;
+                replyHtml = `
+                    <div class="message-reply" data-reply-to="${msg.reply_to}" title="Click to view original message">
+                        <div class="message-reply-indicator"></div>
+                        <div class="message-reply-content">
+                            <div class="message-reply-name">${this.escapeHtml(replySenderName)}</div>
+                            <div class="message-reply-text">${this.escapeHtml(replyMessageText)}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Forwarded indicator
+            const forwardedIndicator = (msg.forwarded_from_message_id || msg.forwarded_from_conversation_id) ? `
+                <div class="message-forwarded">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                    <span>Forwarded</span>
+                </div>
+            ` : '';
+            
             const messageText = msg.message ? `<div class="message-text">${this.escapeHtml(msg.message)}</div>` : '';
             
             // Check if message already exists to prevent duplicates
@@ -585,15 +660,25 @@ const App = {
                 return; // Skip if message already exists
             }
             
+            const isStarred = msg.is_starred == 1;
+            const starIcon = isStarred ? `
+                <svg class="message-star-icon" width="14" height="14" viewBox="0 0 24 24" fill="#ffc107" stroke="#ffc107" stroke-width="2" style="margin-left: 4px;">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+            ` : '';
+            
             const $message = $(`
-                <div class="message ${isSent ? 'sent' : 'received'}" data-message-id="${msg.id}">
+                <div class="message ${isSent ? 'sent' : 'received'}" data-message-id="${msg.id}" data-sender-id="${msg.sender_id}" data-is-starred="${isStarred ? 1 : 0}">
                     ${!isSent ? avatar : ''}
                     <div class="message-bubble">
+                        ${forwardedIndicator}
+                        ${replyHtml}
                         ${senderName}
                         ${attachmentsHtml}
                         ${messageText}
                         <div class="message-time">
                             ${time}
+                            ${starIcon}
                             ${statusIcon}
                         </div>
                     </div>
@@ -650,6 +735,10 @@ const App = {
         
         if ((!message && attachments.length === 0) || !this.currentConversation) return;
         
+        const replyTo = this.replyingTo ? this.replyingTo.id : null;
+        const forwardFromMessageId = this.forwardingMessage ? this.forwardingMessage.id : null;
+        const forwardFromConversationId = this.forwardingMessage ? this.forwardingMessage.conversation_id : null;
+        
         $.ajax({
             url: 'api/messages.php?action=send',
             method: 'POST',
@@ -657,13 +746,18 @@ const App = {
                 conversation_id: this.currentConversation,
                 message: message,
                 message_type: attachments.length > 0 ? (attachments[0].file_type || 'file') : 'text',
-                attachments: JSON.stringify(attachments)
+                attachments: JSON.stringify(attachments),
+                reply_to: replyTo,
+                forwarded_from_message_id: forwardFromMessageId,
+                forwarded_from_conversation_id: forwardFromConversationId
             },
             success: (response) => {
                 if (response.success) {
                     $('#messageInput').val('');
                     this.pendingAttachments = [];
                     this.renderAttachmentsPreview([]);
+                    this.clearReply();
+                    this.clearForward();
                     
                     // Add status to message
                     response.message.message_status = 'sent';
@@ -760,6 +854,13 @@ const App = {
                 // Update message status to delivered (double tick)
                 this.updateMessageStatus(data.message_id, 'delivered');
                 break;
+            case 'message_deleted':
+                if (data.conversation_id == this.currentConversation) {
+                    $(`.message[data-message-id="${data.message_id}"]`).fadeOut(300, function() {
+                        $(this).remove();
+                    });
+                }
+                break;
         }
     },
     
@@ -790,6 +891,78 @@ const App = {
         // File input change
         $('#fileInput').on('change', (e) => {
             const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                this.uploadFiles(files);
+            }
+        });
+        
+        // Paste files (Ctrl+V / Cmd+V)
+        $(document).on('paste', '#messageInput', (e) => {
+            const clipboardData = e.originalEvent.clipboardData;
+            if (!clipboardData || !this.currentConversation) return;
+            
+            const items = clipboardData.items;
+            if (!items) return;
+            
+            const files = [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                // Accept all file types, not just images
+                if (item.kind === 'file') {
+                    const file = item.getAsFile();
+                    if (file) {
+                        files.push(file);
+                    }
+                }
+            }
+            
+            if (files.length > 0) {
+                e.preventDefault();
+                this.uploadFiles(files);
+            }
+        });
+        
+        // Drag and drop files
+        let dragCounter = 0;
+        
+        $(document).on('dragenter', '#chatWindow, #messagesContainer, .chat-area', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter++;
+            if (this.currentConversation) {
+                $('.chat-area').addClass('drag-over');
+            }
+        });
+        
+        $(document).on('dragover', '#chatWindow, #messagesContainer, .chat-area', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.currentConversation) {
+                $('.chat-area').addClass('drag-over');
+            }
+        });
+        
+        $(document).on('dragleave', '#chatWindow, #messagesContainer, .chat-area', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter--;
+            if (dragCounter === 0) {
+                $('.chat-area').removeClass('drag-over');
+            }
+        });
+        
+        $(document).on('drop', '#chatWindow, #messagesContainer, .chat-area', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter = 0;
+            $('.chat-area').removeClass('drag-over');
+            
+            if (!this.currentConversation) {
+                alert('Please select a conversation first');
+                return;
+            }
+            
+            const files = Array.from(e.originalEvent.dataTransfer.files);
             if (files.length > 0) {
                 this.uploadFiles(files);
             }
@@ -1015,6 +1188,103 @@ const App = {
         $('#createStoryForm').on('submit', (e) => {
             e.preventDefault();
             this.createStory();
+        });
+        
+        // Reply to message
+        $(document).on('click', '.message-action-btn[data-action="reply"]', (e) => {
+            e.stopPropagation();
+            const messageId = $(e.currentTarget).data('message-id');
+            this.replyToMessage(messageId);
+        });
+        
+        // Forward message
+        $(document).on('click', '.message-action-btn[data-action="forward"]', (e) => {
+            e.stopPropagation();
+            const messageId = $(e.currentTarget).data('message-id');
+            this.forwardMessage(messageId);
+        });
+        
+        // Cancel reply
+        $('#cancelReplyBtn').on('click', () => {
+            this.clearReply();
+        });
+        
+        // Forward modal events
+        $('#closeForwardModal').on('click', () => {
+            $('#forwardMessageModal').removeClass('active');
+            this.clearForward();
+        });
+        
+        // Forward message button
+        $('#forwardMessageBtn').on('click', () => {
+            this.executeForward();
+        });
+        
+        // Forward conversation search
+        $('#forwardSearchInput').on('input', (e) => {
+            const query = $(e.target).val().trim();
+            this.searchForwardConversations(query);
+        });
+        
+        // Click on reply to scroll to original message
+        $(document).on('click', '.message-reply[data-reply-to]', (e) => {
+            e.stopPropagation();
+            const replyToId = $(e.currentTarget).data('reply-to');
+            this.scrollToMessage(replyToId);
+        });
+        
+        // Right-click context menu
+        $(document).on('contextmenu', '.message', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const messageId = $(e.currentTarget).data('message-id');
+            const isSent = $(e.currentTarget).hasClass('sent');
+            const isStarred = $(e.currentTarget).data('is-starred') == 1;
+            
+            this.showContextMenu(e.pageX, e.pageY, messageId, isSent, isStarred);
+        });
+        
+        // Close context menu on click outside
+        $(document).on('click', (e) => {
+            if (!$(e.target).closest('.context-menu, .message').length) {
+                this.hideContextMenu();
+            }
+        });
+        
+        // Context menu actions
+        $(document).on('click', '.context-menu-item[data-action="reply"]', () => {
+            const messageId = $('#messageContextMenu').data('message-id');
+            this.replyToMessage(messageId);
+            this.hideContextMenu();
+        });
+        
+        $(document).on('click', '.context-menu-item[data-action="forward"]', () => {
+            const messageId = $('#messageContextMenu').data('message-id');
+            this.forwardMessage(messageId);
+            this.hideContextMenu();
+        });
+        
+        $(document).on('click', '.context-menu-item[data-action="copy"]', () => {
+            const messageId = $('#messageContextMenu').data('message-id');
+            this.copyMessage(messageId);
+            this.hideContextMenu();
+        });
+        
+        $(document).on('click', '.context-menu-item[data-action="star"]', () => {
+            const messageId = $('#messageContextMenu').data('message-id');
+            const isStarred = $('#messageContextMenu').data('is-starred');
+            if (isStarred) {
+                this.unstarMessage(messageId);
+            } else {
+                this.starMessage(messageId);
+            }
+            this.hideContextMenu();
+        });
+        
+        $(document).on('click', '.context-menu-item[data-action="delete"]', () => {
+            const messageId = $('#messageContextMenu').data('message-id');
+            this.deleteMessage(messageId);
+            this.hideContextMenu();
         });
         
         // Keyboard navigation for story viewer
@@ -1658,7 +1928,55 @@ const App = {
     },
     
     uploadFiles: function(files) {
+        if (!this.currentConversation) {
+            alert('Please select a conversation first');
+            return;
+        }
+        
+        // Validate file types and sizes
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 
+                             'video/mp4', 'video/avi', 'video/mov', 'video/wmv',
+                             'audio/mp3', 'audio/wav', 'audio/ogg',
+                             'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                             'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                             'text/plain', 'application/zip', 'application/x-rar-compressed'];
+        const maxSize = 25 * 1024 * 1024; // 25MB
+        
+        const validFiles = [];
+        const invalidFiles = [];
+        
         files.forEach(file => {
+            // Check file size
+            if (file.size > maxSize) {
+                invalidFiles.push(`${file.name}: File size exceeds 25MB limit`);
+                return;
+            }
+            
+            // Check file type
+            const isValidType = allowedTypes.some(type => file.type.startsWith(type.split('/')[0] + '/')) || 
+                               allowedTypes.includes(file.type) ||
+                               file.type === ''; // Some files may not have MIME type
+            
+            if (!isValidType && file.type !== '') {
+                invalidFiles.push(`${file.name}: File type not supported`);
+                return;
+            }
+            
+            validFiles.push(file);
+        });
+        
+        // Show errors for invalid files
+        if (invalidFiles.length > 0) {
+            alert('Some files could not be uploaded:\n\n' + invalidFiles.join('\n'));
+        }
+        
+        // Upload valid files
+        if (validFiles.length === 0) {
+            return;
+        }
+        
+        validFiles.forEach(file => {
             const formData = new FormData();
             formData.append('file', file);
             
@@ -1673,11 +1991,24 @@ const App = {
                         this.pendingAttachments.push(response.file);
                         this.renderAttachmentsPreview(this.pendingAttachments);
                     } else {
-                        alert(response.error || 'Failed to upload file');
+                        alert(response.error || `Failed to upload ${file.name}`);
                     }
                 },
-                error: () => {
-                    alert('Error uploading file. Please try again.');
+                error: (xhr) => {
+                    let errorMsg = `Error uploading ${file.name}. Please try again.`;
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg = xhr.responseJSON.error;
+                    } else if (xhr.responseText) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            if (response.error) {
+                                errorMsg = response.error;
+                            }
+                        } catch (e) {
+                            // Not JSON, use default
+                        }
+                    }
+                    alert(errorMsg);
                 }
             });
         });
@@ -2155,7 +2486,474 @@ const App = {
                 console.error('Reply error:', status, error, xhr);
             }
         });
-    }
+    },
+    
+    replyToMessage: function(messageId) {
+        // Find the message in the current conversation
+        const $message = $(`.message[data-message-id="${messageId}"]`);
+        if ($message.length === 0) return;
+        
+        // Get message data from the DOM
+        const messageText = $message.find('.message-text').text() || ($message.find('.message-attachment').length > 0 ? '[Media]' : '');
+        const senderName = $message.find('.message-sender-name').text() || ($message.hasClass('sent') ? 'You' : 'Unknown');
+        
+        // Store reply info
+        this.replyingTo = {
+            id: messageId,
+            message: messageText,
+            sender_name: senderName
+        };
+        
+        // Show reply preview
+        this.showReplyPreview();
+    },
+    
+    showReplyPreview: function() {
+        if (!this.replyingTo) return;
+        
+        $('#replyPreviewName').text(this.replyingTo.sender_name);
+        $('#replyPreviewMessage').text(this.replyingTo.message || '[Media]');
+        $('#replyPreview').slideDown(200);
+        $('#messageInput').focus();
+    },
+    
+    clearReply: function() {
+        this.replyingTo = null;
+        $('#replyPreview').slideUp(200);
+    },
+    
+    forwardMessage: function(messageId) {
+        // Find the message
+        const $message = $(`.message[data-message-id="${messageId}"]`);
+        if ($message.length === 0) return;
+        
+        // Get message data
+        const messageText = $message.find('.message-text').text() || '';
+        const hasAttachments = $message.find('.message-attachment').length > 0;
+        const senderName = $message.find('.message-sender-name').text() || 'Unknown';
+        
+        // Store forward info
+        this.forwardingMessage = {
+            id: messageId,
+            message: messageText,
+            sender_name: senderName,
+            has_attachments: hasAttachments,
+            conversation_id: this.currentConversation
+        };
+        
+        // Show forward modal
+        this.showForwardModal();
+    },
+    
+    showForwardModal: function() {
+        if (!this.forwardingMessage) return;
+        
+        // Show modal first
+        $('#forwardMessageModal').addClass('active');
+        
+        // Show message preview with better formatting
+        const msg = this.forwardingMessage;
+        let previewText = msg.message || '';
+        if (msg.has_attachments || (msg.attachments && msg.attachments.length > 0)) {
+            previewText = previewText || '[Media]';
+        }
+        
+        const previewHtml = `
+            <div style="font-size: 11px; color: #667781; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Forwarding:</div>
+            <div style="font-size: 14px; color: #111b21; line-height: 1.4; word-wrap: break-word;">${this.escapeHtml(previewText.substring(0, 100))}${previewText.length > 100 ? '...' : ''}</div>
+        `;
+        $('#forwardMessagePreview').html(previewHtml).show();
+        
+        // Load conversations
+        this.loadForwardConversations();
+        
+        // Focus search input
+        $('#forwardSearchInput').focus();
+    },
+    
+    loadForwardConversations: function() {
+        const $list = $('#forwardConversationsList');
+        $list.empty();
+        
+        if (!this.conversations || this.conversations.length === 0) {
+            $list.html('<div style="padding: 20px; text-align: center; color: #667781;">No conversations found</div>');
+            return;
+        }
+        
+        // Filter out current conversation
+        const filteredConversations = this.conversations.filter(conv => conv.id != this.currentConversation);
+        
+        if (filteredConversations.length === 0) {
+            $list.html('<div style="padding: 20px; text-align: center; color: #667781;">No other conversations available</div>');
+            return;
+        }
+        
+        filteredConversations.forEach(conv => {
+            const otherUser = conv.other_user || {};
+            let avatar, name, status;
+            
+            if (conv.type === 'group') {
+                avatar = conv.avatar || 'assets/images/default-group.png';
+                name = conv.title || 'Group';
+                status = `${conv.member_count || 0} members`;
+            } else {
+                avatar = otherUser.avatar || 'assets/images/default-avatar.png';
+                name = otherUser.name || 'Unknown';
+                status = this.getUserStatus(otherUser);
+            }
+            
+            const $item = $(`
+                <div class="user-item" data-conversation-id="${conv.id}">
+                    <img src="${avatar}" alt="${this.escapeHtml(name)}" onerror="this.src='assets/images/default-avatar.png'">
+                    <div class="user-info">
+                        <div class="user-name">${this.escapeHtml(name)}</div>
+                        <div class="user-status">${this.escapeHtml(status)}</div>
+                    </div>
+                </div>
+            `);
+            
+            $item.on('click', () => {
+                $('.user-item').removeClass('selected');
+                $item.addClass('selected');
+            });
+            
+            $list.append($item);
+        });
+    },
+    
+    searchForwardConversations: function(query) {
+        const $items = $('#forwardConversationsList .user-item');
+        
+        if (!query || query.trim() === '') {
+            $items.show();
+            return;
+        }
+        
+        const lowerQuery = query.toLowerCase();
+        $items.each(function() {
+            const name = $(this).find('.user-name').text().toLowerCase();
+            if (name.includes(lowerQuery)) {
+                $(this).show();
+            } else {
+                $(this).hide();
+            }
+        });
+    },
+    
+    executeForward: function() {
+        if (!this.forwardingMessage) return;
+        
+        const $selected = $('#forwardConversationsList .user-item.selected');
+        if ($selected.length === 0) {
+            alert('Please select a conversation to forward the message to');
+            return;
+        }
+        
+        const targetConversationId = $selected.data('conversation-id');
+        
+        // Show loading
+        const $btn = $('#forwardMessageBtn');
+        const originalText = $btn.text();
+        $btn.prop('disabled', true).text('Forwarding...');
+        
+        // Forward the message via API
+        $.ajax({
+            url: 'api/messages.php?action=forward',
+            method: 'POST',
+            data: {
+                message_id: this.forwardingMessage.id,
+                conversation_id: targetConversationId
+            },
+            success: (response) => {
+                if (response.success) {
+                    $('#forwardMessageModal').removeClass('active');
+                    this.clearForward();
+                    
+                    // If forwarding to current conversation, show the message
+                    if (response.message) {
+                        const message = response.message;
+                        if (message.conversation_id == this.currentConversation) {
+                            message.message_status = 'sent';
+                            this.renderMessages([message]);
+                            
+                            // Send via WebSocket
+                            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                                this.ws.send(JSON.stringify({
+                                    type: 'message',
+                                    conversation_id: this.currentConversation,
+                                    message: message
+                                }));
+                            }
+                            
+                            // Update delivered status
+                            setTimeout(() => {
+                                this.updateMessageStatus(message.id, 'delivered');
+                            }, 500);
+                        }
+                    }
+                    
+                    this.loadConversations(); // Reload to show updated last message
+                    alert('Message forwarded successfully!');
+                } else {
+                    alert(response.error || 'Failed to forward message');
+                }
+            },
+            error: (xhr) => {
+                let errorMsg = 'Error forwarding message. Please try again.';
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg = xhr.responseJSON.error;
+                } else if (xhr.responseText) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.error) {
+                            errorMsg = response.error;
+                        }
+                    } catch (e) {
+                        // Not JSON, use default
+                    }
+                }
+                alert(errorMsg);
+            },
+            complete: () => {
+                $btn.prop('disabled', false).text(originalText);
+            }
+        });
+    },
+    
+    clearForward: function() {
+        this.forwardingMessage = null;
+        $('#forwardMessagePreview').hide().empty();
+        $('#forwardSearchInput').val('');
+        $('#forwardConversationsList').empty();
+        $('.user-item').removeClass('selected');
+    },
+    
+    deleteStory: function(storyId) {
+        if (!storyId) return;
+        
+        if (!confirm('Are you sure you want to delete this story?')) {
+            return;
+        }
+        
+        $.ajax({
+            url: 'api/stories.php?action=delete',
+            method: 'POST',
+            data: {
+                story_id: storyId
+            },
+            success: (response) => {
+                if (response.success) {
+                    // If currently viewing deleted story, close viewer
+                    if (this.currentStory && this.currentStory.id == storyId) {
+                        this.closeStoryViewer();
+                    }
+                    // Reload stories to update the UI
+                    this.loadStories().then(() => {
+                        // If we have other stories, show the first one
+                        if (this.allStoryGroups && this.allStoryGroups.length > 0) {
+                            // Stories will be reloaded, no need to manually show
+                        }
+                    });
+                } else {
+                    alert(response.error || 'Failed to delete story');
+                }
+            },
+            error: () => {
+                alert('Error deleting story. Please try again.');
+            }
+        });
+    },
+    
+    scrollToMessage: function(messageId) {
+        const $message = $(`.message[data-message-id="${messageId}"]`);
+        if ($message.length === 0) {
+            alert('Original message not found in current view. Please scroll to find it.');
+            return;
+        }
+        
+        const $container = $('#messagesContainer');
+        const containerHeight = $container.height();
+        const messageTop = $message.position().top + $container.scrollTop();
+        const messageHeight = $message.outerHeight();
+        const scrollPosition = messageTop - (containerHeight / 2) + (messageHeight / 2);
+        
+        // Highlight message briefly
+        $message.addClass('highlighted');
+        setTimeout(() => {
+            $message.removeClass('highlighted');
+        }, 2000);
+        
+        // Smooth scroll to message
+        $container.animate({
+            scrollTop: scrollPosition
+        }, 500);
+    },
+    
+    showContextMenu: function(x, y, messageId, isSent, isStarred) {
+        const $menu = $('#messageContextMenu');
+        $menu.data('message-id', messageId);
+        $menu.data('is-starred', isStarred);
+        
+        // Update star button text
+        const $starItem = $menu.find('[data-action="star"]');
+        if (isStarred) {
+            $starItem.addClass('starred');
+            $starItem.find('.star-text').text('Unstar');
+        } else {
+            $starItem.removeClass('starred');
+            $starItem.find('.star-text').text('Star');
+        }
+        
+        // Position menu
+        $menu.css({
+            left: x + 'px',
+            top: y + 'px'
+        });
+        
+        // Adjust if menu goes off screen
+        setTimeout(() => {
+            const menuWidth = $menu.outerWidth();
+            const menuHeight = $menu.outerHeight();
+            const windowWidth = $(window).width();
+            const windowHeight = $(window).height();
+            
+            if (x + menuWidth > windowWidth) {
+                $menu.css('left', (x - menuWidth) + 'px');
+            }
+            if (y + menuHeight > windowHeight) {
+                $menu.css('top', (y - menuHeight) + 'px');
+            }
+        }, 0);
+        
+        $menu.addClass('active');
+    },
+    
+    hideContextMenu: function() {
+        $('#messageContextMenu').removeClass('active');
+    },
+    
+    copyMessage: function(messageId) {
+        const $message = $(`.message[data-message-id="${messageId}"]`);
+        if ($message.length === 0) return;
+        
+        const messageText = $message.find('.message-text').text() || '';
+        
+        if (!messageText) {
+            alert('No text to copy');
+            return;
+        }
+        
+        // Copy to clipboard
+        const textarea = document.createElement('textarea');
+        textarea.value = messageText;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        
+        try {
+            document.execCommand('copy');
+            // Show feedback
+            const $msg = $message.find('.message-bubble');
+            const originalBg = $msg.css('background-color');
+            $msg.css('background-color', '#d9fdd3');
+            setTimeout(() => {
+                $msg.css('background-color', originalBg);
+            }, 300);
+        } catch (err) {
+            alert('Failed to copy message');
+        }
+        
+        document.body.removeChild(textarea);
+    },
+    
+    deleteMessage: function(messageId) {
+        if (!confirm('Are you sure you want to delete this message? This action cannot be undone.')) {
+            return;
+        }
+        
+        $.ajax({
+            url: 'api/messages.php?action=delete',
+            method: 'POST',
+            data: {
+                message_id: messageId
+            },
+            success: (response) => {
+                if (response.success) {
+                    // Remove message from DOM
+                    $(`.message[data-message-id="${messageId}"]`).fadeOut(300, function() {
+                        $(this).remove();
+                    });
+                    
+                    // Notify via WebSocket
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({
+                            type: 'message_deleted',
+                            message_id: messageId,
+                            conversation_id: this.currentConversation
+                        }));
+                    }
+                } else {
+                    alert(response.error || 'Failed to delete message');
+                }
+            },
+            error: () => {
+                alert('Error deleting message. Please try again.');
+            }
+        });
+    },
+    
+    starMessage: function(messageId) {
+        $.ajax({
+            url: 'api/messages.php?action=star',
+            method: 'POST',
+            data: {
+                message_id: messageId
+            },
+            success: (response) => {
+                if (response.success) {
+                    // Update message in DOM
+                    const $message = $(`.message[data-message-id="${messageId}"]`);
+                    $message.data('is-starred', 1);
+                    const starIcon = `
+                        <svg class="message-star-icon" width="14" height="14" viewBox="0 0 24 24" fill="#ffc107" stroke="#ffc107" stroke-width="2" style="margin-left: 4px;">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                    `;
+                    $message.find('.message-time').prepend(starIcon);
+                } else {
+                    alert(response.error || 'Failed to star message');
+                }
+            },
+            error: () => {
+                alert('Error starring message. Please try again.');
+            }
+        });
+    },
+    
+    unstarMessage: function(messageId) {
+        $.ajax({
+            url: 'api/messages.php?action=unstar',
+            method: 'POST',
+            data: {
+                message_id: messageId
+            },
+            success: (response) => {
+                if (response.success) {
+                    // Update message in DOM
+                    const $message = $(`.message[data-message-id="${messageId}"]`);
+                    $message.data('is-starred', 0);
+                    $message.find('.message-star-icon').remove();
+                } else {
+                    alert(response.error || 'Failed to unstar message');
+                }
+            },
+            error: () => {
+                alert('Error unstarring message. Please try again.');
+            }
+        });
+    },
+    
 };
 
 // WebSocket configuration (defined in index.php)

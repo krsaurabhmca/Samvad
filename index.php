@@ -102,6 +102,30 @@ if (!$user) {
                 </div>
                 
                 <div class="chat-input-area">
+                    <!-- Reply Preview -->
+                    <div class="reply-preview" id="replyPreview" style="display: none;">
+                        <div class="reply-preview-content">
+                            <div class="reply-preview-info">
+                                <div class="reply-preview-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="9 10 4 15 9 20"></polyline>
+                                        <path d="M20 4v7a4 4 0 0 1-4 4H4"></path>
+                                    </svg>
+                                </div>
+                                <div class="reply-preview-text">
+                                    <div class="reply-preview-name" id="replyPreviewName"></div>
+                                    <div class="reply-preview-message" id="replyPreviewMessage"></div>
+                                </div>
+                            </div>
+                            <button class="reply-preview-close" id="cancelReplyBtn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
                     <div class="attachments-preview" id="attachmentsPreview"></div>
                     <div class="chat-input-row">
                         <button class="icon-btn" id="attachBtn" title="Attach File">
@@ -150,7 +174,7 @@ if (!$user) {
                         <div class="selected-users" id="selectedUsers"></div>
                     </div>
                     <div class="users-list" id="groupUsersList"></div>
-                    <button class="btn btn-primary" id="createGroupBtn" style="width: 100%; margin-top: 16px;">Create Group</button>
+                    <button class="btn btn-primary create-group-btn" id="createGroupBtn">Create Group</button>
                 </div>
             </div>
         </div>
@@ -310,6 +334,28 @@ if (!$user) {
         </div>
     </div>
     
+    <!-- Forward Message Modal -->
+    <div class="modal" id="forwardMessageModal">
+        <div class="modal-content forward-message-modal">
+            <div class="modal-header">
+                <h2>Forward Message</h2>
+                <button class="close-btn" id="closeForwardModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="forwardMessagePreview" class="forward-message-preview" style="display: none;">
+                    <!-- Message preview will be loaded here -->
+                </div>
+                <div class="form-group">
+                    <input type="text" id="forwardSearchInput" placeholder="Search conversations..." class="form-control" style="margin-bottom: 15px;">
+                    <div id="forwardConversationsList" class="forward-conversations-list">
+                        <!-- Conversations for forwarding will be loaded here -->
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="forwardMessageBtn" style="width: 100%; margin-top: 20px;">Forward</button>
+            </div>
+        </div>
+    </div>
+    
     <!-- Story Replies Modal -->
     <div class="modal" id="storyRepliesModal">
         <div class="modal-content story-replies-modal">
@@ -322,6 +368,45 @@ if (!$user) {
                     <!-- Replies will be loaded here -->
                 </div>
             </div>
+        </div>
+    </div>
+    
+    <!-- Message Context Menu -->
+    <div class="context-menu" id="messageContextMenu">
+        <div class="context-menu-item" data-action="reply">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 10 4 15 9 20"></polyline>
+                <path d="M20 4v7a4 4 0 0 1-4 4H4"></path>
+            </svg>
+            <span>Reply</span>
+        </div>
+        <div class="context-menu-item" data-action="forward">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+                <path d="M15 12H3"></path>
+            </svg>
+            <span>Forward</span>
+        </div>
+        <div class="context-menu-item" data-action="copy">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>Copy</span>
+        </div>
+        <div class="context-menu-item" data-action="star">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            <span class="star-text">Star</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item context-menu-item-danger" data-action="delete">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            <span>Delete</span>
         </div>
     </div>
     

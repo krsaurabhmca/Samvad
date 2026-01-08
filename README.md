@@ -6,7 +6,11 @@
 
 **Simple Business Chat**
 
-*A modern, real-time chat application built with PHP, MySQL, and WebSocket technology*
+*A modern, real-time chat application - Clone of WhatsApp built with PHP, MySQL, and WebSocket technology*
+
+**Developed by:** [OfferPlant Technologies Pvt Ltd](https://www.offerplant.com)
+
+**Support:** [ask@offerplant.com](mailto:ask@offerplant.com)
 
 [![PHP](https://img.shields.io/badge/PHP-7.4+-777BB4?style=flat-square&logo=php&logoColor=white)](https://www.php.net/)
 [![MySQL](https://img.shields.io/badge/MySQL-5.7+-4479A1?style=flat-square&logo=mysql&logoColor=white)](https://www.mysql.com/)
@@ -510,7 +514,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📞 Support
 
-For support, email support@samvad.com or create an issue in the repository.
+For support, email **[ask@offerplant.com](mailto:ask@offerplant.com)** or create an issue in the repository.
 
 ---
 
@@ -524,8 +528,10 @@ For support, email support@samvad.com or create an issue in the repository.
 
 <div align="center">
   
-**Made with ❤️ using PHP, MySQL, and WebSocket**
+**Made with ❤️ by [OfferPlant Technologies Pvt Ltd](https://www.offerplant.com)**
 
 ⭐ Star this repo if you find it helpful!
+
+**Support:** [ask@offerplant.com](mailto:ask@offerplant.com)
 
 </div>

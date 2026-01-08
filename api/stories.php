@@ -65,6 +65,9 @@ function getStories() {
               AND u.status = 'active'
               ORDER BY us.created_at DESC";
     
+    // Auto-delete expired stories (older than 24 hours)
+    mysqli_query($conn, "DELETE FROM user_status WHERE expires_at IS NOT NULL AND expires_at < NOW()");
+    
     $result = mysqli_query($conn, $query);
     $stories = [];
     $groupedStories = [];
