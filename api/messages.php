@@ -24,6 +24,15 @@ switch ($action) {
     case 'mark_conversation_read':
         markConversationAsRead();
         break;
+    case 'add_reaction':
+        addReaction();
+        break;
+    case 'remove_reaction':
+        removeReaction();
+        break;
+    case 'get_reactions':
+        getReactions();
+        break;
     default:
         sendJSON(['error' => 'Invalid action'], 400);
 }
@@ -358,8 +367,14 @@ function forwardMessage() {
     $message_id = (int)($_POST['message_id'] ?? 0);
     $conversation_id = (int)($_POST['conversation_id'] ?? 0);
     
-    if (!$message_id || !$conversation_id) {
-        sendJSON(['error' => 'Message ID and Conversation ID required'], 400);
+    if (!$message_id) {
+        sendJSON(['error' => 'Message ID required'], 400);
+        return;
+    }
+    
+    if (!$conversation_id) {
+        sendJSON(['error' => 'Conversation ID required'], 400);
+        return;
     }
     
     // Check if user has access to the original message
@@ -377,17 +392,28 @@ function forwardMessage() {
     $check_target = mysqli_query($conn, "SELECT * FROM conversation_members WHERE conversation_id = $conversation_id AND user_id = {$user['id']}");
     if (mysqli_num_rows($check_target) == 0) {
         sendJSON(['error' => 'Access denied to target conversation'], 403);
+        return;
     }
     
-    // Create forwarded message
+    // Check if forwarded columns exist
+    $columns_check = @mysqli_query($conn, "SHOW COLUMNS FROM messages LIKE 'forwarded_from_message_id'");
+    $has_forwarded_columns = $columns_check && mysqli_num_rows($columns_check) > 0;
+    
+    // Create forwarded message (copy of original with forward badge)
     $uuid = generateUUID();
     $forwarded_from_message_id = $original_message['id'];
     $forwarded_from_conversation_id = $original_message['conversation_id'];
     $message = escape($conn, $original_message['message'] ?? '');
     $message_type = escape($conn, $original_message['message_type'] ?? 'text');
     
-    $query = "INSERT INTO messages (uuid, conversation_id, sender_id, message_type, message, forwarded_from_message_id, forwarded_from_conversation_id) 
-              VALUES ('$uuid', $conversation_id, {$user['id']}, '$message_type', '$message', $forwarded_from_message_id, $forwarded_from_conversation_id)";
+    if ($has_forwarded_columns) {
+        $query = "INSERT INTO messages (uuid, conversation_id, sender_id, message_type, message, forwarded_from_message_id, forwarded_from_conversation_id) 
+                  VALUES ('$uuid', $conversation_id, {$user['id']}, '$message_type', '$message', $forwarded_from_message_id, $forwarded_from_conversation_id)";
+    } else {
+        // Fallback if columns don't exist yet
+        $query = "INSERT INTO messages (uuid, conversation_id, sender_id, message_type, message) 
+                  VALUES ('$uuid', $conversation_id, {$user['id']}, '$message_type', '$message')";
+    }
     
     if (mysqli_query($conn, $query)) {
         $new_message_id = mysqli_insert_id($conn);
@@ -418,14 +444,26 @@ function forwardMessage() {
             mysqli_query($conn, $status_query);
         }
         
-        // Get the created message
+        // Get the created message with all fields
+        $columns_check = @mysqli_query($conn, "SHOW COLUMNS FROM messages LIKE 'forwarded_from_message_id'");
+        $has_forwarded_columns = $columns_check && mysqli_num_rows($columns_check) > 0;
+        $forwarded_fields = $has_forwarded_columns ? 
+            ", m.forwarded_from_message_id, m.forwarded_from_conversation_id" : 
+            ", NULL as forwarded_from_message_id, NULL as forwarded_from_conversation_id";
+        
         $msg_query = "SELECT m.*, u.name as sender_name, 
-                     COALESCE(NULLIF(u.avatar, ''), 'assets/images/default-avatar.png') as sender_avatar 
+                     COALESCE(NULLIF(u.avatar, ''), 'assets/images/default-avatar.png') as sender_avatar
+                     $forwarded_fields
                      FROM messages m
                      INNER JOIN users u ON m.sender_id = u.id
                      WHERE m.id = $new_message_id";
         $msg_result = mysqli_query($conn, $msg_query);
         $new_message = mysqli_fetch_assoc($msg_result);
+        
+        if (!$new_message) {
+            sendJSON(['error' => 'Failed to retrieve forwarded message'], 500);
+            return;
+        }
         
         // Format avatar URL
         if (!empty($new_message['sender_avatar'])) {
@@ -469,8 +507,17 @@ function forwardMessage() {
             $new_message['message_status'] = 'sent';
         }
         
-        $new_message['forwarded_from_message_id'] = $forwarded_from_message_id;
-        $new_message['forwarded_from_conversation_id'] = $forwarded_from_conversation_id;
+        // Ensure forwarded fields are set
+        if ($has_forwarded_columns) {
+            $new_message['forwarded_from_message_id'] = $forwarded_from_message_id;
+            $new_message['forwarded_from_conversation_id'] = $forwarded_from_conversation_id;
+        } else {
+            $new_message['forwarded_from_message_id'] = null;
+            $new_message['forwarded_from_conversation_id'] = null;
+        }
+        
+        // Add conversation_id to response
+        $new_message['conversation_id'] = $conversation_id;
         
         sendJSON(['success' => true, 'message' => $new_message]);
     } else {

@@ -133,6 +133,14 @@ if (!$user) {
                                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
                             </svg>
                         </button>
+                        <button class="icon-btn" id="emojiBtn" title="Emoji">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                                <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                                <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                            </svg>
+                        </button>
                         <input type="file" id="fileInput" multiple style="display: none;" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar">
                         <input type="text" id="messageInput" placeholder="Type a message">
                         <button class="icon-btn send-btn" id="sendBtn" title="Send">
@@ -141,6 +149,21 @@ if (!$user) {
                                 <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                             </svg>
                         </button>
+                    </div>
+                    <!-- Emoji Picker -->
+                    <div class="emoji-picker" id="emojiPicker" style="display: none;">
+                        <div class="emoji-picker-header">
+                            <div class="emoji-categories">
+                                <button class="emoji-category-btn active" data-category="smileys">😀</button>
+                                <button class="emoji-category-btn" data-category="gestures">👋</button>
+                                <button class="emoji-category-btn" data-category="hearts">❤️</button>
+                                <button class="emoji-category-btn" data-category="objects">🎉</button>
+                                <button class="emoji-category-btn" data-category="symbols">✅</button>
+                            </div>
+                        </div>
+                        <div class="emoji-picker-body" id="emojiPickerBody">
+                            <!-- Emojis will be loaded here -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -351,7 +374,7 @@ if (!$user) {
                         <!-- Conversations for forwarding will be loaded here -->
                     </div>
                 </div>
-                <button class="btn btn-primary" id="forwardMessageBtn" style="width: 100%; margin-top: 20px;">Forward</button>
+                <button class="btn btn-primary" id="forwardMessageBtn" style="width: 100%; margin-top: 20px;">Forward to Selected (<span id="forwardSelectedCount">0</span>)</button>
             </div>
         </div>
     </div>
@@ -409,6 +432,9 @@ if (!$user) {
             <span>Delete</span>
         </div>
     </div>
+    
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
     
     <script>
         // WebSocket Configuration

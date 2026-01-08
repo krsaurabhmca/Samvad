@@ -119,13 +119,16 @@ class Chat implements MessageComponentInterface {
         }
         
         // Send to all recipients
+        // $data['message'] contains the actual message object
+        $message_data = $data['message'] ?? $data;
+        
         foreach ($recipients as $user_id) {
             if (isset($this->users[$user_id])) {
                 foreach ($this->users[$user_id] as $client) {
                     $client->send(json_encode([
                         'type' => 'new_message',
                         'conversation_id' => $conversation_id,
-                        'message' => $data
+                        'message' => $message_data
                     ]));
                 }
             }

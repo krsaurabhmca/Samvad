@@ -27,6 +27,7 @@ body {
     display: flex;
     flex-direction: column;
     background: #fff;
+    overflow-x: hidden;
 }
 
 .sidebar-header {
@@ -233,6 +234,7 @@ body {
 .conversations-list {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .conversation-item {
@@ -274,15 +276,36 @@ body {
     width: 3px;
 }
 
+.conversation-avatar-wrapper {
+    position: relative;
+    flex-shrink: 0;
+}
+
 .conversation-avatar {
     width: 54px;
     height: 54px;
     border-radius: 50%;
     object-fit: cover;
-    flex-shrink: 0;
+    display: block;
     border: 2px solid transparent;
     transition: all 0.3s ease;
     box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.group-icon-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #25d366;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .conversation-item:hover .conversation-avatar {
@@ -661,48 +684,39 @@ body {
     color: rgba(0, 0, 0, 0.6);
 }
 
-/* Forwarded Indicator */
-.message-forwarded {
-    display: inline-flex;
+/* Forwarded Badge (WhatsApp Style) */
+.message-forwarded-badge {
+    display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 11px;
+    gap: 4px;
+    font-size: 12.5px;
     color: #667781;
-    margin-bottom: 6px;
-    padding: 4px 8px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    background: rgba(0, 0, 0, 0.03);
-    border-radius: 12px;
-    transition: all 0.2s ease;
+    margin-bottom: 4px;
+    padding: 0;
+    font-weight: 400;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
 }
 
-.message-forwarded:hover {
-    background: rgba(0, 0, 0, 0.06);
-    transform: scale(1.02);
+.message.sent .message-forwarded-badge {
+    color: rgba(255, 255, 255, 0.7);
 }
 
-.message.sent .message-forwarded {
-    color: rgba(255, 255, 255, 0.75);
-    background: rgba(255, 255, 255, 0.1);
+.message.received .message-forwarded-badge {
+    color: #667781;
 }
 
-.message.sent .message-forwarded:hover {
-    background: rgba(255, 255, 255, 0.2);
-}
-
-.message-forwarded svg {
-    width: 12px;
-    height: 12px;
+.message-forwarded-badge svg {
+    width: 14px;
+    height: 14px;
     stroke-width: 2.5;
-    opacity: 0.8;
-    transition: transform 0.2s ease;
+    flex-shrink: 0;
+    opacity: 0.85;
 }
 
-.message-forwarded:hover svg {
-    transform: translateX(2px);
-    opacity: 1;
+.message-forwarded-badge span {
+    font-size: 12.5px;
+    font-weight: 400;
 }
 
 /* Message actions removed - using context menu only */
@@ -2528,9 +2542,54 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
     position: relative;
     z-index: 10;
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+    flex-wrap: wrap;
+}
+
+.story-footer-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    min-width: 0;
+    max-width: 60%;
+}
+
+.story-footer-text {
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.5;
+    word-wrap: break-word;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    font-weight: 400;
+}
+
+.story-footer-link {
+    margin-top: 4px;
+}
+
+.story-footer-link a {
+    color: #25d366;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    word-break: break-all;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    transition: all 0.2s ease;
+    display: inline-block;
+}
+
+.story-footer-link a:hover {
+    color: #20ba5a;
+    text-decoration: underline;
 }
 
 .story-nav-btn {
@@ -2569,6 +2628,28 @@ body {
 .story-viewer .close-btn {
     color: #fff;
     background: rgba(255, 255, 255, 0.1);
+}
+
+.story-reply-toggle {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+.story-reply-toggle:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .story-viewer .close-btn:hover {

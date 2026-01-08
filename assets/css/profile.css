@@ -9,6 +9,7 @@ body {
     margin: 0 auto;
     background: #fff;
     min-height: 100vh;
+    height: 100vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -78,7 +79,9 @@ body {
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
-    padding: 24px 20px;
+    padding: 24px 20px 40px 20px; /* Extra bottom padding to ensure logout button is visible */
+    min-height: 0; /* Important for flex scrolling */
+    max-height: calc(100vh - 80px); /* Ensure it doesn't exceed viewport */
     scrollbar-width: thin;
     scrollbar-color: #cbd5e0 transparent;
 }
@@ -458,19 +461,23 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin-bottom: 20px; /* Ensure spacing before account info */
 }
 
 .action-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px;
+    padding: 16px 20px;
     background: #f5f6f6;
-    border-radius: 8px;
+    border-radius: 12px;
     text-decoration: none;
     color: #111b21;
-    transition: background 0.2s;
+    transition: all 0.2s ease;
     font-size: 15px;
+    font-weight: 500;
+    min-height: 52px; /* Ensure minimum height for visibility */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .action-item:hover {
@@ -489,11 +496,15 @@ body {
 
 .logout-btn {
     color: #dc3545;
+    background: #fff5f5 !important;
+    border: 1px solid #fecaca;
 }
 
 .logout-btn:hover {
-    background: #fee;
-    border-left: 3px solid #dc3545;
+    background: #fee !important;
+    border-left: 4px solid #dc3545;
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.15);
 }
 
 .logout-btn svg {

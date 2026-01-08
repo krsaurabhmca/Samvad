@@ -88,6 +88,15 @@ function uploadMessageAttachment() {
     $file = $_FILES['file'];
     $max_size = 25 * 1024 * 1024; // 25MB
     
+    // Blocked executable file extensions
+    $blocked_extensions = ['php', 'js', 'exe', 'bat', 'cmd', 'com', 'pif', 'scr', 'vbs', 'sh', 'py', 'rb', 'pl', 'jar', 'war', 'ear', 'class', 'dll', 'so', 'dylib', 'bin', 'msi', 'deb', 'rpm', 'app', 'apk', 'ipa'];
+    
+    $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    
+    if (in_array($file_extension, $blocked_extensions)) {
+        sendJSON(['error' => 'Executable files (.'.$file_extension.') are not allowed for security reasons'], 400);
+    }
+    
     if ($file['size'] > $max_size) {
         sendJSON(['error' => 'File size too large. Maximum 25MB allowed.'], 400);
     }

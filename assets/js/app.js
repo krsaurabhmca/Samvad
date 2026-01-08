@@ -2,6 +2,64 @@ const App = {
     ws: null,
     currentUser: null,
     currentConversation: null,
+    
+    // Toast notification system
+    showConfirmDialog: function(message, onConfirm, onCancel = null) {
+        // Create a simple confirmation dialog using native confirm for now
+        // In a production app, you might want a custom modal
+        if (confirm(message)) {
+            if (onConfirm) onConfirm();
+        } else {
+            if (onCancel) onCancel();
+        }
+    },
+    
+    showConfirmDialog: function(message, onConfirm, onCancel = null) {
+        // Create a simple confirmation dialog using native confirm for now
+        // In a production app, you might want a custom modal
+        if (confirm(message)) {
+            if (onConfirm) onConfirm();
+        } else {
+            if (onCancel) onCancel();
+        }
+    },
+    
+    showToast: function(message, type = 'info', duration = 3000) {
+        const toast = $(`
+            <div class="toast toast-${type}">
+                <div class="toast-content">
+                    <div class="toast-icon">
+                        ${type === 'success' ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>' : 
+                          type === 'error' ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' :
+                          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'}
+                    </div>
+                    <div class="toast-message">${this.escapeHtml(message)}</div>
+                    <button class="toast-close">&times;</button>
+                </div>
+            </div>
+        `);
+        
+        $('#toastContainer').append(toast);
+        
+        // Animate in
+        setTimeout(() => toast.addClass('show'), 10);
+        
+        // Auto remove
+        const autoRemove = setTimeout(() => {
+            this.removeToast(toast);
+        }, duration);
+        
+        // Manual close
+        toast.find('.toast-close').on('click', () => {
+            clearTimeout(autoRemove);
+            this.removeToast(toast);
+        });
+    },
+    
+    removeToast: function($toast) {
+        $toast.removeClass('show');
+        setTimeout(() => $toast.remove(), 300);
+    },
     conversations: [],
     stories: [],
     allStoryGroups: [], // All story groups for auto-advance to next person
@@ -100,9 +158,10 @@ const App = {
         $myStory.on('click', (e) => {
             if ($(e.target).hasClass('story-delete-btn') || $(e.target).closest('.story-delete-btn').length) {
                 e.stopPropagation();
-                if (confirm('Are you sure you want to delete your story?')) {
+                // Use custom confirmation
+                this.showConfirmDialog('Are you sure you want to delete your story?', () => {
                     this.deleteStory(myStories.stories[0].id);
-                }
+                });
             } else if (!hasMyStories) {
                 this.openCreateStoryModal();
             } else {
@@ -210,20 +269,69 @@ const App = {
             contentHtml += `<div class="story-image-container"><img src="${story.status_image}" alt="Story" class="story-image"></div>`;
         }
         
-        if (story.status_text) {
-            contentHtml += `<div class="story-text">${this.escapeHtml(story.status_text)}</div>`;
-        }
-        
-        if (story.status_link) {
-            contentHtml += `<div class="story-link"><a href="${story.status_link}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(story.status_link)}</a></div>`;
-        }
+        // Text and link will be shown in footer, not in content
+        // Only show image in content area
         
         $content.html(contentHtml);
         
-        // Update navigation buttons
-        $('#prevStoryBtn').toggle(index > 0);
-        $('#nextStoryBtn').toggle(index < this.currentStoryGroup.stories.length - 1);
-        $('#storyReplyToggle').toggle(!isMyStory);
+        // Update footer with text and link (transparent badge style)
+        const $footer = $('.story-viewer-nav');
+        let footerHtml = '';
+        
+        if (story.status_text || story.status_link) {
+            footerHtml = '<div class="story-footer-content">';
+            if (story.status_text) {
+                footerHtml += `<div class="story-footer-text">${this.escapeHtml(story.status_text)}</div>`;
+            }
+            if (story.status_link) {
+                footerHtml += `<div class="story-footer-link"><a href="${story.status_link}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(story.status_link)}</a></div>`;
+            }
+            footerHtml += '</div>';
+        }
+        
+        // Add navigation buttons
+        footerHtml += `
+            <button class="story-nav-btn" id="prevStoryBtn" ${index > 0 ? '' : 'style="display: none;"'}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+            <button class="story-reply-toggle" id="storyReplyToggle" style="display: ${!isMyStory ? 'flex' : 'none'};">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+            </button>
+            <button class="story-nav-btn" id="nextStoryBtn" ${index < this.currentStoryGroup.stories.length - 1 ? '' : 'style="display: none;"'}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        `;
+        
+        $footer.html(footerHtml);
+        
+        // Re-bind navigation button events
+        $('#prevStoryBtn').off('click').on('click', () => {
+            if (this.currentStoryIndex > 0) {
+                this.showStory(this.currentStoryIndex - 1);
+            }
+        });
+        
+        $('#nextStoryBtn').off('click').on('click', () => {
+            if (this.currentStoryIndex < this.currentStoryGroup.stories.length - 1) {
+                this.showStory(this.currentStoryIndex + 1);
+            } else {
+                this.advanceToNextPersonStory();
+            }
+        });
+        
+        $('#storyReplyToggle').off('click').on('click', (e) => {
+            e.stopPropagation();
+            $('#storyReplyArea').toggle();
+            if ($('#storyReplyArea').is(':visible')) {
+                $('#storyReplyInput').focus();
+            }
+        });
         
         // Create progress bars
         this.createProgressBars();
@@ -444,14 +552,15 @@ const App = {
             const lastMessage = conv.last_message || 'No messages yet';
             const time = conv.last_message_time ? this.formatTime(conv.last_message_time) : '';
             const unread = conv.unread_count > 0 ? `<span class="unread-badge">${conv.unread_count}</span>` : '';
-            const groupIcon = conv.type === 'group' ? '<span style="font-size: 12px; margin-left: 4px;">👥</span>' : '';
-            
             const $item = $(`
                 <div class="conversation-item" data-id="${conv.id}">
-                    <img src="${avatar}" alt="${name}" class="conversation-avatar" onerror="this.src='assets/images/default-avatar.png'">
+                    <div class="conversation-avatar-wrapper">
+                        <img src="${avatar}" alt="${name}" class="conversation-avatar" onerror="this.src='assets/images/default-avatar.png'">
+                        ${conv.type === 'group' ? '<div class="group-icon-badge">👥</div>' : ''}
+                    </div>
                     <div class="conversation-info">
                         <div class="conversation-header">
-                            <span class="conversation-name">${this.escapeHtml(name)}${groupIcon}</span>
+                            <span class="conversation-name">${this.escapeHtml(name)}</span>
                             <span class="conversation-time">${time}</span>
                         </div>
                         <div class="conversation-preview">
@@ -643,11 +752,11 @@ const App = {
                 `;
             }
             
-            // Forwarded indicator
+            // Forwarded indicator (WhatsApp style)
             const forwardedIndicator = (msg.forwarded_from_message_id || msg.forwarded_from_conversation_id) ? `
-                <div class="message-forwarded">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <polyline points="15 18 9 12 15 6"></polyline>
+                <div class="message-forwarded-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
                     <span>Forwarded</span>
                 </div>
@@ -668,7 +777,7 @@ const App = {
             ` : '';
             
             const $message = $(`
-                <div class="message ${isSent ? 'sent' : 'received'}" data-message-id="${msg.id}" data-sender-id="${msg.sender_id}" data-is-starred="${isStarred ? 1 : 0}">
+                <div class="message ${isSent ? 'sent' : 'received'}" data-message-id="${msg.id}" data-sender-id="${msg.sender_id}" data-is-starred="${isStarred ? 1 : 0}" data-forwarded-from-message-id="${msg.forwarded_from_message_id || ''}" data-forwarded-from-conversation-id="${msg.forwarded_from_conversation_id || ''}">
                     ${!isSent ? avatar : ''}
                     <div class="message-bubble">
                         ${forwardedIndicator}
@@ -958,7 +1067,7 @@ const App = {
             $('.chat-area').removeClass('drag-over');
             
             if (!this.currentConversation) {
-                alert('Please select a conversation first');
+                this.showToast('Please select a conversation first', 'warning');
                 return;
             }
             
@@ -1139,13 +1248,13 @@ const App = {
                 fileArray.forEach((file) => {
                     // Check file size (max 10MB per image)
                     if (file.size > 10 * 1024 * 1024) {
-                        alert(`File "${file.name}" is too large. Maximum size is 10MB.`);
+                        this.showToast(`File "${file.name}" is too large. Maximum size is 10MB.`, 'error');
                         return;
                     }
                     
                     // Check if it's an image
                     if (!file.type.startsWith('image/')) {
-                        alert(`File "${file.name}" is not an image.`);
+                        this.showToast(`File "${file.name}" is not an image.`, 'error');
                         return;
                     }
                     
@@ -1465,12 +1574,12 @@ const App = {
         const memberIds = this.selectedGroupMembers.map(u => u.id);
         
         if (!groupName) {
-            alert('Please enter a group name');
+            this.showToast('Please enter a group name', 'warning');
             return;
         }
         
         if (memberIds.length === 0) {
-            alert('Please add at least one member to the group');
+            this.showToast('Please add at least one member to the group', 'warning');
             return;
         }
         
@@ -1490,11 +1599,11 @@ const App = {
                         this.openConversation(response.conversation_id);
                     }, 500);
                 } else {
-                    alert(response.error || 'Failed to create group');
+                    this.showToast(response.error || 'Failed to create group', 'error');
                 }
             },
             error: () => {
-                alert('Error creating group. Please try again.');
+                this.showToast('Error creating group. Please try again.', 'error');
             }
         });
     },
@@ -1579,13 +1688,13 @@ const App = {
                     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
                     
                     if (!allowedTypes.includes(file.type)) {
-                        alert('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.');
+                        this.showToast('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.', 'error');
                         $(e.target).val('');
                         return;
                     }
                     
                     if (file.size > maxSize) {
-                        alert('File size too large. Maximum 5MB allowed.');
+                        this.showToast('File size too large. Maximum 5MB allowed.', 'error');
                         $(e.target).val('');
                         return;
                     }
@@ -1610,9 +1719,10 @@ const App = {
             $(document).off('click', '.btn-remove-member').on('click', '.btn-remove-member', function(e) {
                 e.stopPropagation();
                 const memberId = $(this).data('id');
-                if (confirm('Are you sure you want to remove this member?')) {
+                // Use custom confirmation
+                App.showConfirmDialog('Are you sure you want to remove this member?', () => {
                     App.removeGroupMember(memberId);
-                }
+                });
             });
         }
     },
@@ -1638,12 +1748,9 @@ const App = {
                     $('#chatUserAvatar').attr('src', response.avatar_url + '?t=' + Date.now());
                     this.loadConversations();
                     
-                    // Show success message
-                    const $success = $('<div class="alert alert-success" style="position: fixed; top: 20px; right: 20px; z-index: 10000; padding: 12px 20px; border-radius: 8px;">Group photo updated successfully</div>');
-                    $('body').append($success);
-                    setTimeout(() => $success.fadeOut(() => $success.remove()), 3000);
+                    this.showToast('Group photo updated successfully', 'success');
                 } else {
-                    alert(response.error || 'Failed to upload photo');
+                    this.showToast(response.error || 'Failed to upload photo', 'error');
                 }
             },
             error: (xhr, status, error) => {
@@ -1651,7 +1758,7 @@ const App = {
                 if (xhr.responseJSON && xhr.responseJSON.error) {
                     errorMsg = xhr.responseJSON.error;
                 }
-                alert(errorMsg);
+                this.showToast(errorMsg, 'error');
                 console.error('Upload error:', xhr.responseText);
             }
         });
@@ -1695,7 +1802,7 @@ const App = {
         const description = $('#groupSettingsDescription').val().trim();
         
         if (!title) {
-            alert('Group name is required');
+            this.showToast('Group name is required', 'warning');
             return;
         }
         
@@ -1713,13 +1820,13 @@ const App = {
                     this.loadConversations();
                     this.openConversation(this.currentConversation);
                     this.showGroupInfo();
-                    alert('Group settings updated successfully');
+                    this.showToast('Group settings updated successfully', 'success');
                 } else {
-                    alert(response.error || 'Failed to update settings');
+                    this.showToast(response.error || 'Failed to update settings', 'error');
                 }
             },
             error: () => {
-                alert('Error updating settings. Please try again.');
+                this.showToast('Error updating settings. Please try again.', 'error');
             }
         });
     },
@@ -1832,7 +1939,7 @@ const App = {
         const memberIds = this.addMemberSelectedUsers.map(u => u.id);
         
         if (memberIds.length === 0) {
-            alert('Please select at least one member to add');
+            this.showToast('Please select at least one member to add', 'warning');
             return;
         }
         
@@ -1848,13 +1955,13 @@ const App = {
                     this.loadConversations();
                     this.openConversation(this.currentConversation);
                     this.showGroupInfo();
-                    alert('Members added successfully');
+                    this.showToast('Members added successfully', 'success');
                 } else {
-                    alert(response.error || 'Failed to add members');
+                    this.showToast(response.error || 'Failed to add members', 'error');
                 }
             },
             error: () => {
-                alert('Error adding members. Please try again.');
+                this.showToast('Error adding members. Please try again.', 'error');
             }
         });
     },
@@ -1872,13 +1979,13 @@ const App = {
                     this.loadConversations();
                     this.openConversation(this.currentConversation);
                     this.showGroupInfo();
-                    alert('Member removed successfully');
+                    this.showToast('Member removed successfully', 'success');
                 } else {
-                    alert(response.error || 'Failed to remove member');
+                    this.showToast(response.error || 'Failed to remove member', 'error');
                 }
             },
             error: () => {
-                alert('Error removing member. Please try again.');
+                this.showToast('Error removing member. Please try again.', 'error');
             }
         });
     },
@@ -1929,9 +2036,12 @@ const App = {
     
     uploadFiles: function(files) {
         if (!this.currentConversation) {
-            alert('Please select a conversation first');
+            this.showToast('Please select a conversation first', 'warning');
             return;
         }
+        
+        // Blocked executable file extensions
+        const blockedExtensions = ['php', 'js', 'exe', 'bat', 'cmd', 'com', 'pif', 'scr', 'vbs', 'sh', 'py', 'rb', 'pl', 'jar', 'war', 'ear', 'class', 'dll', 'so', 'dylib', 'bin', 'msi', 'deb', 'rpm', 'app', 'apk', 'ipa'];
         
         // Validate file types and sizes
         const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 
@@ -1947,6 +2057,16 @@ const App = {
         const invalidFiles = [];
         
         files.forEach(file => {
+            // Get file extension
+            const fileName = file.name.toLowerCase();
+            const extension = fileName.split('.').pop();
+            
+            // Check for blocked executable extensions
+            if (blockedExtensions.includes(extension)) {
+                invalidFiles.push(`${file.name}: Executable files (.${extension}) are not allowed for security reasons`);
+                return;
+            }
+            
             // Check file size
             if (file.size > maxSize) {
                 invalidFiles.push(`${file.name}: File size exceeds 25MB limit`);
@@ -1968,7 +2088,7 @@ const App = {
         
         // Show errors for invalid files
         if (invalidFiles.length > 0) {
-            alert('Some files could not be uploaded:\n\n' + invalidFiles.join('\n'));
+            this.showToast('Some files could not be uploaded:\n' + invalidFiles.join('\n'), 'error', 5000);
         }
         
         // Upload valid files
@@ -1991,7 +2111,7 @@ const App = {
                         this.pendingAttachments.push(response.file);
                         this.renderAttachmentsPreview(this.pendingAttachments);
                     } else {
-                        alert(response.error || `Failed to upload ${file.name}`);
+                        this.showToast(response.error || `Failed to upload ${file.name}`, 'error');
                     }
                 },
                 error: (xhr) => {
@@ -2008,7 +2128,7 @@ const App = {
                             // Not JSON, use default
                         }
                     }
-                    alert(errorMsg);
+                    this.showToast(errorMsg, 'error');
                 }
             });
         });
@@ -2239,7 +2359,7 @@ const App = {
         
         // Validate input
         if (imageCount === 0 && !text && !link) {
-            alert('Please add at least a photo, text, or link');
+            this.showToast('Please add at least a photo, text, or link', 'warning');
             return;
         }
         
@@ -2285,15 +2405,15 @@ const App = {
                     this.resetCreateStoryForm();
                     this.loadStories(); // Reload stories
                     $submitBtn.prop('disabled', false).html(originalText);
-                    alert('Story posted successfully!');
+                    this.showToast('Story posted successfully!', 'success');
                 } else {
                     $submitBtn.prop('disabled', false).html(originalText);
-                    alert(response.error || 'Failed to create story');
+                    this.showToast(response.error || 'Failed to create story', 'error');
                 }
             },
             error: () => {
                 $submitBtn.prop('disabled', false).html(originalText);
-                alert('Error creating story. Please try again.');
+                this.showToast('Error creating story. Please try again.', 'error');
             }
         });
     },
@@ -2305,7 +2425,7 @@ const App = {
             this.resetCreateStoryForm();
             this.loadStories(); // Reload stories
             $submitBtn.prop('disabled', false).html(originalText);
-            alert(`${totalCount} ${totalCount > 1 ? 'stories' : 'story'} posted successfully!`);
+            this.showToast(`${totalCount} ${totalCount > 1 ? 'stories' : 'story'} posted successfully!`, 'success');
             return;
         }
         
@@ -2338,7 +2458,7 @@ const App = {
                     this.createMultipleStories(index + 1, text, link, totalCount, $submitBtn, originalText);
                 } else {
                     $submitBtn.prop('disabled', false).html(originalText);
-                    alert(`Failed to create story ${index + 1}: ${response.error || 'Unknown error'}`);
+                    this.showToast(`Failed to create story ${index + 1}: ${response.error || 'Unknown error'}`, 'error');
                 }
             },
             error: (xhr) => {
@@ -2347,7 +2467,7 @@ const App = {
                 if (xhr.responseJSON && xhr.responseJSON.error) {
                     errorMsg = xhr.responseJSON.error;
                 }
-                alert(`Failed to create story ${index + 1}: ${errorMsg}`);
+                this.showToast(`Failed to create story ${index + 1}: ${errorMsg}`, 'error');
             }
         });
     },
@@ -2382,7 +2502,7 @@ const App = {
                 }
             },
             error: () => {
-                alert('Error loading viewers');
+                this.showToast('Error loading viewers', 'error');
             }
         });
     },
@@ -2418,21 +2538,21 @@ const App = {
                 }
             },
             error: () => {
-                alert('Error loading replies');
+                this.showToast('Error loading replies', 'error');
             }
         });
     },
     
     sendStoryReply: function() {
         if (!this.currentStory) {
-            alert('No story selected');
+            this.showToast('No story selected', 'warning');
             return;
         }
         
         const replyText = $('#storyReplyInput').val().trim();
         
         if (!replyText) {
-            alert('Please enter a reply');
+            this.showToast('Please enter a reply', 'warning');
             return;
         }
         
@@ -2454,14 +2574,14 @@ const App = {
                 if (response && response.success) {
                     $('#storyReplyInput').val('');
                     $('#storyReplyArea').hide();
-                    alert('Reply sent successfully!');
+                    this.showToast('Reply sent successfully!', 'success');
                     // Reload stats if viewing own story
                     if (this.currentStoryGroup && this.currentStoryGroup.is_my_story) {
                         this.loadStoryStats(this.currentStory.id);
                     }
                 } else {
                     const errorMsg = (response && response.error) ? response.error : 'Failed to send reply';
-                    alert(errorMsg);
+                    this.showToast(errorMsg, 'error');
                 }
             },
             error: (xhr, status, error) => {
@@ -2482,7 +2602,7 @@ const App = {
                     }
                 }
                 
-                alert(errorMsg);
+                this.showToast(errorMsg, 'error');
                 console.error('Reply error:', status, error, xhr);
             }
         });
@@ -2613,12 +2733,20 @@ const App = {
             `);
             
             $item.on('click', () => {
-                $('.user-item').removeClass('selected');
-                $item.addClass('selected');
+                // Toggle selection for multiple selection
+                $item.toggleClass('selected');
+                this.updateForwardButtonCount();
             });
             
             $list.append($item);
         });
+        
+        this.updateForwardButtonCount();
+    },
+    
+    updateForwardButtonCount: function() {
+        const count = $('#forwardConversationsList .user-item.selected').length;
+        $('#forwardSelectedCount').text(count);
     },
     
     searchForwardConversations: function(query) {
@@ -2626,6 +2754,7 @@ const App = {
         
         if (!query || query.trim() === '') {
             $items.show();
+            this.updateForwardButtonCount();
             return;
         }
         
@@ -2638,6 +2767,7 @@ const App = {
                 $(this).hide();
             }
         });
+        this.updateForwardButtonCount();
     },
     
     executeForward: function() {
@@ -2645,78 +2775,104 @@ const App = {
         
         const $selected = $('#forwardConversationsList .user-item.selected');
         if ($selected.length === 0) {
-            alert('Please select a conversation to forward the message to');
+            this.showToast('Please select at least one conversation to forward the message to', 'warning');
             return;
         }
         
-        const targetConversationId = $selected.data('conversation-id');
+        const targetConversationIds = [];
+        $selected.each(function() {
+            targetConversationIds.push($(this).data('conversation-id'));
+        });
         
         // Show loading
         const $btn = $('#forwardMessageBtn');
         const originalText = $btn.text();
-        $btn.prop('disabled', true).text('Forwarding...');
+        $btn.prop('disabled', true).text(`Forwarding to ${targetConversationIds.length} conversation(s)...`);
         
-        // Forward the message via API
-        $.ajax({
-            url: 'api/messages.php?action=forward',
-            method: 'POST',
-            data: {
-                message_id: this.forwardingMessage.id,
-                conversation_id: targetConversationId
-            },
-            success: (response) => {
-                if (response.success) {
-                    $('#forwardMessageModal').removeClass('active');
-                    this.clearForward();
-                    
-                    // If forwarding to current conversation, show the message
-                    if (response.message) {
-                        const message = response.message;
-                        if (message.conversation_id == this.currentConversation) {
-                            message.message_status = 'sent';
-                            this.renderMessages([message]);
-                            
-                            // Send via WebSocket
-                            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                                this.ws.send(JSON.stringify({
-                                    type: 'message',
-                                    conversation_id: this.currentConversation,
-                                    message: message
-                                }));
-                            }
+        // Forward to multiple conversations
+        let successCount = 0;
+        let failCount = 0;
+        let completed = 0;
+        
+        targetConversationIds.forEach((conversationId, index) => {
+            $.ajax({
+                url: 'api/messages.php?action=forward',
+                method: 'POST',
+                data: {
+                    message_id: this.forwardingMessage.id,
+                    conversation_id: conversationId
+                },
+                success: (response) => {
+                    completed++;
+                    if (response.success && response.message) {
+                        successCount++;
+                        
+                        // Send via WebSocket to notify all members of the target conversation
+                        // The message object already contains all forwarded fields
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN && response.message) {
+                            // Ensure message has all required fields for WebSocket
+                            const wsMessage = {
+                                ...response.message,
+                                conversation_id: response.message.conversation_id
+                            };
+                            this.ws.send(JSON.stringify({
+                                type: 'message',
+                                conversation_id: response.message.conversation_id,
+                                message: wsMessage
+                            }));
+                        }
+                        
+                        // If forwarding to current conversation, show the message
+                        if (response.message.conversation_id == this.currentConversation) {
+                            response.message.message_status = 'sent';
+                            this.renderMessages([response.message]);
                             
                             // Update delivered status
                             setTimeout(() => {
-                                this.updateMessageStatus(message.id, 'delivered');
+                                this.updateMessageStatus(response.message.id, 'delivered');
                             }, 500);
                         }
+                    } else {
+                        failCount++;
+                        console.error('Forward failed:', response);
                     }
                     
-                    this.loadConversations(); // Reload to show updated last message
-                    alert('Message forwarded successfully!');
-                } else {
-                    alert(response.error || 'Failed to forward message');
-                }
-            },
-            error: (xhr) => {
-                let errorMsg = 'Error forwarding message. Please try again.';
-                if (xhr.responseJSON && xhr.responseJSON.error) {
-                    errorMsg = xhr.responseJSON.error;
-                } else if (xhr.responseText) {
-                    try {
-                        const response = JSON.parse(xhr.responseText);
-                        if (response.error) {
-                            errorMsg = response.error;
+                    // All requests completed
+                    if (completed === targetConversationIds.length) {
+                        $('#forwardMessageModal').removeClass('active');
+                        this.clearForward();
+                        this.loadConversations();
+                        
+                        if (successCount > 0) {
+                            this.showToast(`Message forwarded to ${successCount} conversation(s) successfully!`, 'success');
                         }
-                    } catch (e) {
-                        // Not JSON, use default
+                        if (failCount > 0) {
+                            this.showToast(`Failed to forward to ${failCount} conversation(s)`, 'error');
+                        }
+                        
+                        $btn.prop('disabled', false).text(originalText);
+                    }
+                },
+                error: (xhr) => {
+                    completed++;
+                    failCount++;
+                    
+                    if (completed === targetConversationIds.length) {
+                        $('#forwardMessageModal').removeClass('active');
+                        this.clearForward();
+                        this.loadConversations();
+                        
+                        if (successCount > 0) {
+                            this.showToast(`Message forwarded to ${successCount} conversation(s) successfully!`, 'success');
+                        }
+                        if (failCount > 0) {
+                            this.showToast(`Failed to forward to ${failCount} conversation(s)`, 'error');
+                        }
+                        
+                        $btn.prop('disabled', false).text(originalText);
                     }
                 }
-                alert(errorMsg);
-            },
-            complete: () => {
-                $btn.prop('disabled', false).text(originalText);
-            }
+            });
         });
     },
     
@@ -2731,9 +2887,15 @@ const App = {
     deleteStory: function(storyId) {
         if (!storyId) return;
         
-        if (!confirm('Are you sure you want to delete this story?')) {
-            return;
-        }
+        // Use custom confirmation
+        this.showConfirmDialog('Are you sure you want to delete this story?', () => {
+            this.deleteStoryConfirmed(storyId);
+        });
+        return;
+    },
+    
+    deleteStoryConfirmed: function(storyId) {
+        if (!storyId) return;
         
         $.ajax({
             url: 'api/stories.php?action=delete',
@@ -2755,11 +2917,11 @@ const App = {
                         }
                     });
                 } else {
-                    alert(response.error || 'Failed to delete story');
+                    this.showToast(response.error || 'Failed to delete story', 'error');
                 }
             },
             error: () => {
-                alert('Error deleting story. Please try again.');
+                this.showToast('Error deleting story. Please try again.', 'error');
             }
         });
     },
@@ -2767,7 +2929,7 @@ const App = {
     scrollToMessage: function(messageId) {
         const $message = $(`.message[data-message-id="${messageId}"]`);
         if ($message.length === 0) {
-            alert('Original message not found in current view. Please scroll to find it.');
+            this.showToast('Original message not found in current view. Please scroll to find it.', 'warning');
             return;
         }
         
@@ -2839,13 +3001,34 @@ const App = {
         const messageText = $message.find('.message-text').text() || '';
         
         if (!messageText) {
-            alert('No text to copy');
+            this.showToast('No text to copy', 'warning');
             return;
         }
         
-        // Copy to clipboard
+        // Copy to clipboard using modern API
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(messageText).then(() => {
+                this.showToast('Message copied to clipboard', 'success');
+                // Show visual feedback
+                const $msg = $message.find('.message-bubble');
+                const originalBg = $msg.css('background-color');
+                $msg.css('background-color', '#d9fdd3');
+                setTimeout(() => {
+                    $msg.css('background-color', originalBg);
+                }, 300);
+            }).catch(() => {
+                // Fallback for older browsers
+                this.fallbackCopyText(messageText, $message);
+            });
+        } else {
+            // Fallback for older browsers
+            this.fallbackCopyText(messageText, $message);
+        }
+    },
+    
+    fallbackCopyText: function(text, $message) {
         const textarea = document.createElement('textarea');
-        textarea.value = messageText;
+        textarea.value = text;
         textarea.style.position = 'fixed';
         textarea.style.opacity = '0';
         document.body.appendChild(textarea);
@@ -2853,7 +3036,8 @@ const App = {
         
         try {
             document.execCommand('copy');
-            // Show feedback
+            this.showToast('Message copied to clipboard', 'success');
+            // Show visual feedback
             const $msg = $message.find('.message-bubble');
             const originalBg = $msg.css('background-color');
             $msg.css('background-color', '#d9fdd3');
@@ -2861,16 +3045,21 @@ const App = {
                 $msg.css('background-color', originalBg);
             }, 300);
         } catch (err) {
-            alert('Failed to copy message');
+            this.showToast('Failed to copy message', 'error');
         }
         
         document.body.removeChild(textarea);
     },
     
     deleteMessage: function(messageId) {
-        if (!confirm('Are you sure you want to delete this message? This action cannot be undone.')) {
-            return;
-        }
+        // Use custom confirmation
+        this.showConfirmDialog('Are you sure you want to delete this message? This action cannot be undone.', () => {
+            this.deleteMessageConfirmed(messageId);
+        });
+        return;
+    },
+    
+    deleteMessageConfirmed: function(messageId) {
         
         $.ajax({
             url: 'api/messages.php?action=delete',
@@ -2894,11 +3083,11 @@ const App = {
                         }));
                     }
                 } else {
-                    alert(response.error || 'Failed to delete message');
+                    this.showToast(response.error || 'Failed to delete message', 'error');
                 }
             },
             error: () => {
-                alert('Error deleting message. Please try again.');
+                this.showToast('Error deleting message. Please try again.', 'error');
             }
         });
     },
@@ -2922,11 +3111,11 @@ const App = {
                     `;
                     $message.find('.message-time').prepend(starIcon);
                 } else {
-                    alert(response.error || 'Failed to star message');
+                    this.showToast(response.error || 'Failed to star message', 'error');
                 }
             },
             error: () => {
-                alert('Error starring message. Please try again.');
+                this.showToast('Error starring message. Please try again.', 'error');
             }
         });
     },
@@ -2945,11 +3134,11 @@ const App = {
                     $message.data('is-starred', 0);
                     $message.find('.message-star-icon').remove();
                 } else {
-                    alert(response.error || 'Failed to unstar message');
+                    this.showToast(response.error || 'Failed to unstar message', 'error');
                 }
             },
             error: () => {
-                alert('Error unstarring message. Please try again.');
+                this.showToast('Error unstarring message. Please try again.', 'error');
             }
         });
     },
