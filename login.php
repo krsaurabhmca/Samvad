@@ -81,8 +81,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div class="auth-box">
             <div class="auth-header">
                 <img src="assets/images/logo.png" alt="Samvad" class="auth-logo">
-                <h1>Samvad</h1>
-                <p class="auth-tagline">Simple Business Chat</p>
+                <!-- <h1>Samvad</h1>
+                <p class="auth-tagline">Simple Business Chat</p> -->
             </div>
             
             <?php if ($error): ?>

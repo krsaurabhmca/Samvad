@@ -442,6 +442,51 @@ function replyToStory() {
         $story_query = "SELECT user_id FROM user_status WHERE id = $story_id";
         $story_result = mysqli_query($conn, $story_query);
         $story_data = mysqli_fetch_assoc($story_result);
+        $story_owner_id = $story_data['user_id'];
+        
+        // Create or find conversation between reply sender and story owner
+        if ($story_owner_id != $user['id']) {
+            // Check if conversation exists
+            $conv_check = "SELECT c.id FROM conversations c
+                          INNER JOIN conversation_members cm1 ON c.id = cm1.conversation_id
+                          INNER JOIN conversation_members cm2 ON c.id = cm2.conversation_id
+                          WHERE c.type = 'single' 
+                          AND cm1.user_id = {$user['id']} 
+                          AND cm2.user_id = $story_owner_id";
+            $conv_result = mysqli_query($conn, $conv_check);
+            
+            $conversation_id = null;
+            if (mysqli_num_rows($conv_result) > 0) {
+                $conv_row = mysqli_fetch_assoc($conv_result);
+                $conversation_id = $conv_row['id'];
+            } else {
+                // Create new conversation
+                $uuid = generateUUID();
+                $create_conv = "INSERT INTO conversations (uuid, type, created_by) VALUES ('$uuid', 'single', {$user['id']})";
+                if (mysqli_query($conn, $create_conv)) {
+                    $conversation_id = mysqli_insert_id($conn);
+                    // Add both users as members
+                    mysqli_query($conn, "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($conversation_id, {$user['id']}, 'admin')");
+                    mysqli_query($conn, "INSERT INTO conversation_members (conversation_id, user_id) VALUES ($conversation_id, $story_owner_id)");
+                }
+            }
+            
+            // Create message in conversation with story reply
+            if ($conversation_id) {
+                $message_uuid = generateUUID();
+                $message_text = escape($conn, "Replied to story: " . $reply_text);
+                $insert_msg = "INSERT INTO messages (uuid, conversation_id, sender_id, message_type, message) 
+                              VALUES ('$message_uuid', $conversation_id, {$user['id']}, 'text', '$message_text')";
+                
+                if (mysqli_query($conn, $insert_msg)) {
+                    $message_id = mysqli_insert_id($conn);
+                    
+                    // Create message status for story owner
+                    mysqli_query($conn, "INSERT INTO message_status (message_id, user_id, status) 
+                                       VALUES ($message_id, $story_owner_id, 'sent')");
+                }
+            }
+        }
         
         sendJSON([
             'success' => true,
@@ -454,7 +499,7 @@ function replyToStory() {
                 'reply_text' => $reply['reply_text'],
                 'created_at' => $reply['created_at']
             ],
-            'story_owner_id' => $story_data['user_id'],
+            'story_owner_id' => $story_owner_id,
             'message' => 'Reply sent successfully'
         ]);
     } else {

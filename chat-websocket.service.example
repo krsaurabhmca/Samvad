@@ -1,0 +1,19 @@
+[Unit]
+Description=Chat WebSocket Server
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/yourdomain.com/websocket
+# Example: /www/wwwroot/kprm.co.in/samvad/websocket
+ExecStart=/usr/bin/php /www/wwwroot/yourdomain.com/websocket/server.php
+# Example: /usr/bin/php /www/wwwroot/kprm.co.in/samvad/websocket/server.php
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

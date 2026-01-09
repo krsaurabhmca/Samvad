@@ -6,12 +6,27 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #075e54 0%, #128c7e 50%, #25d366 100%);
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+body::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        radial-gradient(circle at 20% 50%, rgba(37, 211, 102, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(7, 94, 84, 0.1) 0%, transparent 50%);
+    pointer-events: none;
 }
 
 .auth-container {
@@ -19,11 +34,29 @@ body {
     max-width: 400px;
 }
 
+.auth-container {
+    position: relative;
+    z-index: 1;
+}
+
 .auth-box {
     background: #fff;
-    border-radius: 12px;
-    padding: 40px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    border-radius: 20px;
+    padding: 48px 40px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    animation: slideUp 0.4s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .auth-header {
@@ -127,16 +160,19 @@ body {
 }
 
 .form-group input {
-    padding: 12px;
-    border: 1px solid #e4e6eb;
-    border-radius: 8px;
-    font-size: 14px;
+    padding: 14px 16px;
+    border: 2px solid #e4e6eb;
+    border-radius: 12px;
+    font-size: 15px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
+    background: #f8f9fa;
 }
 
 .form-group input:focus {
     border-color: #25d366;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.1);
 }
 
 .btn {
@@ -150,14 +186,20 @@ body {
 }
 
 .btn-primary {
-    background: #25d366;
+    background: linear-gradient(135deg, #25d366 0%, #20ba5a 100%);
     color: #fff;
+    box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 
 .btn-primary:hover {
-    background: #20ba5a;
+    background: linear-gradient(135deg, #20ba5a 0%, #1ea84d 100%);
+    box-shadow: 0 6px 16px rgba(37, 211, 102, 0.4);
+    transform: translateY(-2px);
 }
 
 .btn-primary:active {
-    transform: scale(0.98);
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 2px 8px rgba(37, 211, 102, 0.3);
 }

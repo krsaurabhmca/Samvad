@@ -1,6 +1,9 @@
 #!/bin/bash
-echo "Starting WebSocket Server..."
-echo ""
-echo "Make sure you have run: composer install"
-echo ""
-php websocket/server.php
+# Direct command to start WebSocket server
+# Usage: ./start-websocket.sh
+
+# Change to websocket directory
+cd /www/wwwroot/kprm.co.in/samvad/websocket
+
+# Start the WebSocket server
+php server.php

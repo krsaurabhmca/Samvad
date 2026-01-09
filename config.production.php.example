@@ -1,0 +1,49 @@
+<?php
+/**
+ * Production Configuration Template
+ * 
+ * Copy this file to config.php and update with your production values
+ * DO NOT commit config.php with real credentials to version control
+ */
+
+// Database Configuration
+// Get these from aaPanel → Database → MySQL Management
+define('DB_HOST', 'localhost');  // Usually 'localhost' or '127.0.0.1'
+define('DB_USER', 'your_database_username');  // Your MySQL username
+define('DB_PASS', 'your_secure_database_password');  // Your MySQL password
+define('DB_NAME', 'your_database_name');  // Your database name
+
+// Application Configuration
+// Replace with your actual domain (with or without subdirectory)
+// Examples:
+// - https://example.com (if chat is in root)
+// - https://example.com/chat (if chat is in subdirectory)
+// - https://kprm.co.in/samvad (example with subdirectory)
+define('BASE_URL', 'https://yourdomain.com');  // CHANGE THIS - e.g., 'https://kprm.co.in/samvad'
+define('UPLOAD_DIR', __DIR__ . '/uploads/');
+define('UPLOAD_URL', BASE_URL . '/uploads/');
+
+// WebSocket Configuration
+// Use your domain name (recommended) or server IP
+// If using domain, ensure DNS A record points to your server IP
+define('WS_HOST', 'yourdomain.com');  // CHANGE THIS - Use your domain or IP
+define('WS_PORT', 8080);  // Make sure this port is open in firewall
+
+// Session Configuration
+ini_set('session.cookie_httponly', 1);
+ini_set('session.use_only_cookies', 1);
+ini_set('session.cookie_secure', 1);  // Required for HTTPS
+session_start();
+
+// Timezone
+// Find your timezone: https://www.php.net/manual/en/timezones.php
+// Examples: 'Asia/Kolkata', 'America/New_York', 'Europe/London', 'UTC'
+date_default_timezone_set('Asia/Kolkata');  // CHANGE THIS to your timezone
+
+// Error Reporting - MUST BE DISABLED IN PRODUCTION
+error_reporting(0);  // Disable all error reporting
+ini_set('display_errors', 0);  // Don't display errors
+ini_set('log_errors', 1);  // Log errors to file instead
+ini_set('error_log', __DIR__ . '/logs/php-errors.log');  // Error log location
+
+?>

@@ -136,6 +136,40 @@ function getMessages() {
             $row['attachments'][] = $attachment;
         }
         
+        // Get reactions
+        $reactions_check = @mysqli_query($conn, "SHOW TABLES LIKE 'message_reactions'");
+        $has_reactions_table = $reactions_check && mysqli_num_rows($reactions_check) > 0;
+        $row['reactions'] = [];
+        if ($has_reactions_table) {
+            $reactions_query = "SELECT reaction, COUNT(*) as count, GROUP_CONCAT(DISTINCT u.name) as user_names
+                               FROM message_reactions mr
+                               LEFT JOIN users u ON mr.user_id = u.id
+                               WHERE mr.message_id = {$row['id']}
+                               GROUP BY reaction
+                               ORDER BY count DESC, reaction ASC";
+            $reactions_result = mysqli_query($conn, $reactions_query);
+            if ($reactions_result) {
+                while ($reaction = mysqli_fetch_assoc($reactions_result)) {
+                    $row['reactions'][] = [
+                        'reaction' => $reaction['reaction'],
+                        'count' => (int)$reaction['count'],
+                        'user_names' => $reaction['user_names']
+                    ];
+                }
+            }
+            
+            // Check if current user has reacted
+            $user_reaction_query = "SELECT reaction FROM message_reactions 
+                                   WHERE message_id = {$row['id']} AND user_id = {$user['id']}";
+            $user_reaction_result = mysqli_query($conn, $user_reaction_query);
+            $row['my_reactions'] = [];
+            if ($user_reaction_result) {
+                while ($ur = mysqli_fetch_assoc($user_reaction_result)) {
+                    $row['my_reactions'][] = $ur['reaction'];
+                }
+            }
+        }
+        
         // Get message status for sent messages
         if ($row['sender_id'] == $user['id']) {
             $status_query = "SELECT status, COUNT(*) as count FROM message_status 
@@ -672,5 +706,157 @@ function unstarMessage() {
     } else {
         sendJSON(['error' => 'Failed to unstar message: ' . mysqli_error($conn)], 500);
     }
+}
+
+function addReaction() {
+    global $conn, $user;
+    
+    $message_id = (int)($_POST['message_id'] ?? 0);
+    $reaction = escape($conn, $_POST['reaction'] ?? '');
+    
+    if (!$message_id) {
+        sendJSON(['error' => 'Message ID required'], 400);
+        return;
+    }
+    
+    if (empty($reaction)) {
+        sendJSON(['error' => 'Reaction required'], 400);
+        return;
+    }
+    
+    // Check if message_reactions table exists
+    $reactions_check = @mysqli_query($conn, "SHOW TABLES LIKE 'message_reactions'");
+    $has_reactions_table = $reactions_check && mysqli_num_rows($reactions_check) > 0;
+    
+    if (!$has_reactions_table) {
+        sendJSON(['error' => 'Reactions feature not available. Please run database_message_reactions_update.sql'], 500);
+        return;
+    }
+    
+    // Check if message exists and user has access
+    $check_query = "SELECT m.* FROM messages m
+                    INNER JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+                    WHERE m.id = $message_id AND cm.user_id = {$user['id']}";
+    $check_result = mysqli_query($conn, $check_query);
+    
+    if (!$check_result || mysqli_num_rows($check_result) == 0) {
+        sendJSON(['error' => 'Message not found or access denied'], 404);
+        return;
+    }
+    
+    // Check if reaction already exists
+    $existing_query = "SELECT * FROM message_reactions 
+                       WHERE message_id = $message_id 
+                       AND user_id = {$user['id']} 
+                       AND reaction = '$reaction'";
+    $existing_result = mysqli_query($conn, $existing_query);
+    
+    if (mysqli_num_rows($existing_result) > 0) {
+        sendJSON(['success' => true, 'message' => 'Reaction already exists']);
+        return;
+    }
+    
+    // Add reaction
+    $insert_query = "INSERT INTO message_reactions (message_id, user_id, reaction) 
+                     VALUES ($message_id, {$user['id']}, '$reaction')";
+    
+    if (mysqli_query($conn, $insert_query)) {
+        sendJSON(['success' => true, 'message' => 'Reaction added successfully']);
+    } else {
+        sendJSON(['error' => 'Failed to add reaction: ' . mysqli_error($conn)], 500);
+    }
+}
+
+function removeReaction() {
+    global $conn, $user;
+    
+    $message_id = (int)($_POST['message_id'] ?? 0);
+    $reaction = escape($conn, $_POST['reaction'] ?? '');
+    
+    if (!$message_id) {
+        sendJSON(['error' => 'Message ID required'], 400);
+        return;
+    }
+    
+    if (empty($reaction)) {
+        sendJSON(['error' => 'Reaction required'], 400);
+        return;
+    }
+    
+    // Check if message_reactions table exists
+    $reactions_check = @mysqli_query($conn, "SHOW TABLES LIKE 'message_reactions'");
+    $has_reactions_table = $reactions_check && mysqli_num_rows($reactions_check) > 0;
+    
+    if (!$has_reactions_table) {
+        sendJSON(['error' => 'Reactions feature not available. Please run database_message_reactions_update.sql'], 500);
+        return;
+    }
+    
+    // Remove reaction
+    $delete_query = "DELETE FROM message_reactions 
+                     WHERE message_id = $message_id 
+                     AND user_id = {$user['id']} 
+                     AND reaction = '$reaction'";
+    
+    if (mysqli_query($conn, $delete_query)) {
+        sendJSON(['success' => true, 'message' => 'Reaction removed successfully']);
+    } else {
+        sendJSON(['error' => 'Failed to remove reaction: ' . mysqli_error($conn)], 500);
+    }
+}
+
+function getReactions() {
+    global $conn, $user;
+    
+    $message_id = (int)($_GET['message_id'] ?? 0);
+    
+    if (!$message_id) {
+        sendJSON(['error' => 'Message ID required'], 400);
+        return;
+    }
+    
+    // Check if message_reactions table exists
+    $reactions_check = @mysqli_query($conn, "SHOW TABLES LIKE 'message_reactions'");
+    $has_reactions_table = $reactions_check && mysqli_num_rows($reactions_check) > 0;
+    
+    if (!$has_reactions_table) {
+        sendJSON(['success' => true, 'reactions' => []]);
+        return;
+    }
+    
+    // Check if message exists and user has access
+    $check_query = "SELECT m.* FROM messages m
+                    INNER JOIN conversation_members cm ON m.conversation_id = cm.conversation_id
+                    WHERE m.id = $message_id AND cm.user_id = {$user['id']}";
+    $check_result = mysqli_query($conn, $check_query);
+    
+    if (!$check_result || mysqli_num_rows($check_result) == 0) {
+        sendJSON(['error' => 'Message not found or access denied'], 404);
+        return;
+    }
+    
+    // Get all reactions for this message
+    $reactions_query = "SELECT mr.*, u.name as user_name 
+                        FROM message_reactions mr
+                        INNER JOIN users u ON mr.user_id = u.id
+                        WHERE mr.message_id = $message_id
+                        ORDER BY mr.created_at ASC";
+    $reactions_result = mysqli_query($conn, $reactions_query);
+    
+    $reactions = [];
+    if ($reactions_result) {
+        while ($reaction = mysqli_fetch_assoc($reactions_result)) {
+            $reactions[] = [
+                'id' => $reaction['id'],
+                'message_id' => $reaction['message_id'],
+                'user_id' => $reaction['user_id'],
+                'user_name' => $reaction['user_name'],
+                'reaction' => $reaction['reaction'],
+                'created_at' => $reaction['created_at']
+            ];
+        }
+    }
+    
+    sendJSON(['success' => true, 'reactions' => $reactions]);
 }
 ?>

@@ -79,11 +79,65 @@ const App = {
     forwardingMessage: null, // Message being forwarded
     
     init: function() {
+        this.requestNotificationPermission();
         this.loadUser();
         this.loadConversations();
         this.loadStories();
         this.bindEvents();
+        
+        // Initialize mobile view
+        if ($(window).width() <= 768) {
+            $('#chatContainer').addClass('mobile-section-active');
+            $('.mobile-bottom-nav .nav-item[data-section="chat"]').addClass('active');
+        }
+        
+        // Handle window resize
+        $(window).on('resize', () => {
+            if ($(window).width() > 768) {
+                $('.mobile-section').removeClass('active');
+                $('#chatContainer').addClass('mobile-section-active');
+            } else {
+                // Ensure chat section is active on mobile
+                if (!$('.mobile-section.active').length) {
+                    $('#chatContainer').addClass('mobile-section-active');
+                    $('.mobile-bottom-nav .nav-item[data-section="chat"]').addClass('active');
+                }
+            }
+        });
+        
         // WebSocket will be initialized after user loads
+    },
+    
+    requestNotificationPermission: function() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    console.log('Notification permission granted');
+                }
+            });
+        }
+    },
+    
+    showBrowserNotification: function(title, body, icon = null) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            const notification = new Notification(title, {
+                body: body,
+                icon: icon || 'assets/images/logo.png',
+                badge: 'assets/images/logo.png',
+                tag: 'chat-notification',
+                requireInteraction: false
+            });
+            
+            notification.onclick = function() {
+                window.focus();
+                notification.close();
+            };
+            
+            // Auto close after 5 seconds
+            setTimeout(() => {
+                notification.close();
+            }, 5000);
+        }
     },
     
     loadUser: function() {
@@ -127,6 +181,10 @@ const App = {
                     this.stories = response.stories || [];
                     this.allStoryGroups = this.stories.filter(s => s.stories && s.stories.length > 0);
                     this.renderStories();
+                    // Also render mobile stories if section is active
+                    if ($('#mobileStoriesSection').hasClass('active')) {
+                        this.renderMobileStories();
+                    }
                 }
             },
             error: () => {
@@ -555,7 +613,7 @@ const App = {
             const $item = $(`
                 <div class="conversation-item" data-id="${conv.id}">
                     <div class="conversation-avatar-wrapper">
-                        <img src="${avatar}" alt="${name}" class="conversation-avatar" onerror="this.src='assets/images/default-avatar.png'">
+                        <img src="${avatar}" alt="${name}" class="conversation-avatar" onerror="this.onerror=null; this.src='${conv.type === 'group' ? 'assets/images/group-avatar.png' : 'assets/images/default-avatar.png'}';">
                         ${conv.type === 'group' ? '<div class="group-icon-badge">👥</div>' : ''}
                     </div>
                     <div class="conversation-info">
@@ -591,6 +649,12 @@ const App = {
         $('#emptyChat').hide();
         $('#chatWindow').show();
         
+        // On mobile, switch to chat section
+        if ($(window).width() <= 768) {
+            this.switchMobileSection('chat');
+            $('#sidebar').removeClass('active');
+        }
+        
         // Clear messages container first
         $('#messagesContainer').empty();
         
@@ -614,8 +678,8 @@ const App = {
                         }
                     } else {
                         const groupAvatar = conv.avatar || 'assets/images/group-avatar.png';
-                        $('#chatUserAvatar').off('click').attr('src', groupAvatar).on('error', function() {
-                            $(this).attr('src', 'assets/images/group-avatar.png');
+                        $('#chatUserAvatar').off('click').attr('src', groupAvatar).off('error').on('error', function() {
+                            $(this).off('error').attr('src', 'assets/images/group-avatar.png');
                         });
                         $('#chatUserName').text(conv.title);
                         $('#chatUserStatus').text(`${conv.members.length} members`);
@@ -627,13 +691,37 @@ const App = {
         this.loadMessages(conversationId);
     },
     
-    loadMessages: function(conversationId) {
+    loadMessages: function(conversationId, page = 1, append = false) {
         $.ajax({
-            url: `api/messages.php?action=list&conversation_id=${conversationId}`,
+            url: `api/messages.php?action=list&conversation_id=${conversationId}&page=${page}`,
             method: 'GET',
             success: (response) => {
                 if (response.success) {
-                    this.renderMessages(response.messages || []);
+                    const messages = response.messages || [];
+                    if (append) {
+                        // Prepend older messages
+                        const $container = $('#messagesContainer');
+                        const scrollHeight = $container[0].scrollHeight;
+                        const scrollTop = $container.scrollTop();
+                        this.renderMessages(messages, true);
+                        // Maintain scroll position
+                        setTimeout(() => {
+                            const newScrollHeight = $container[0].scrollHeight;
+                            $container.scrollTop(scrollTop + (newScrollHeight - scrollHeight));
+                        }, 0);
+                    } else {
+                        this.renderMessages(messages);
+                    }
+                    
+                    // Show/hide Load More button
+                    const hasMore = messages.length >= 50; // If we got 50 messages, there might be more
+                    if (hasMore && page === 1) {
+                        this.showLoadMoreButton();
+                    } else if (!hasMore || messages.length === 0) {
+                        this.hideLoadMoreButton();
+                    }
+                    
+                    this.currentMessagePage = page;
                 } else {
                     console.error('Failed to load messages:', response.error);
                 }
@@ -645,11 +733,32 @@ const App = {
         });
     },
     
-    renderMessages: function(messages) {
+    showLoadMoreButton: function() {
+        const $container = $('#messagesContainer');
+        if ($container.find('.load-more-messages').length === 0) {
+            const $loadMore = $('<div class="load-more-messages"><button class="btn-load-more">Load More Messages</button></div>');
+            $container.prepend($loadMore);
+            $loadMore.find('.btn-load-more').on('click', () => {
+                this.loadMoreMessages();
+            });
+        }
+    },
+    
+    hideLoadMoreButton: function() {
+        $('#messagesContainer .load-more-messages').remove();
+    },
+    
+    loadMoreMessages: function() {
+        if (!this.currentConversation) return;
+        const nextPage = (this.currentMessagePage || 1) + 1;
+        this.loadMessages(this.currentConversation, nextPage, true);
+    },
+    
+    renderMessages: function(messages, prepend = false) {
         const $container = $('#messagesContainer');
         
         // If container is empty, clear it first (for initial load)
-        if (messages.length > 0 && $container.children().length === 0) {
+        if (messages.length > 0 && $container.children().length === 0 && !prepend) {
             $container.empty();
         }
         
@@ -706,7 +815,7 @@ const App = {
                     if (att.file_type === 'image') {
                         attachmentsHtml += `
                             <div class="message-attachment">
-                                <img src="${att.file_url}" alt="${this.escapeHtml(att.file_name)}" onclick="window.open('${att.file_url}', '_blank')">
+                                <img src="${att.file_url}" alt="${this.escapeHtml(att.file_name)}" class="message-image" data-image-url="${att.file_url}" data-image-name="${this.escapeHtml(att.file_name)}">
                             </div>
                         `;
                     } else if (att.file_type === 'video') {
@@ -722,7 +831,7 @@ const App = {
                         const fileIconClass = this.getFileIconClass(att.file_name, att.file_type);
                         attachmentsHtml += `
                             <div class="message-attachment">
-                                <a href="${att.file_url}" target="_blank" class="file-attachment">
+                                <a href="${att.file_url}" download="${this.escapeHtml(att.file_name)}" class="file-attachment">
                                     <div class="file-icon-large ${fileIconClass}">${fileIcon}</div>
                                     <div class="file-info">
                                         <div class="file-info-name">${this.escapeHtml(att.file_name)}</div>
@@ -752,17 +861,17 @@ const App = {
                 `;
             }
             
-            // Forwarded indicator (WhatsApp style)
+            // Forwarded indicator (at top of message)
             const forwardedIndicator = (msg.forwarded_from_message_id || msg.forwarded_from_conversation_id) ? `
-                <div class="message-forwarded-badge">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <div class="message-forwarded-label">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
                     <span>Forwarded</span>
                 </div>
             ` : '';
             
-            const messageText = msg.message ? `<div class="message-text">${this.escapeHtml(msg.message)}</div>` : '';
+            const messageText = msg.message || '';
             
             // Check if message already exists to prevent duplicates
             if ($container.find(`.message[data-message-id="${msg.id}"]`).length > 0) {
@@ -776,33 +885,165 @@ const App = {
                 </svg>
             ` : '';
             
+            // Reactions HTML
+            let reactionsHtml = '';
+            if (msg.reactions && msg.reactions.length > 0) {
+                const myReactions = msg.my_reactions || [];
+                reactionsHtml = '<div class="message-reactions">';
+                msg.reactions.forEach(reaction => {
+                    const isMyReaction = myReactions.includes(reaction.reaction);
+                    reactionsHtml += `
+                        <span class="message-reaction ${isMyReaction ? 'my-reaction' : ''}" 
+                              data-reaction="${this.escapeHtml(reaction.reaction)}" 
+                              data-message-id="${msg.id}"
+                              title="${this.escapeHtml(reaction.user_names || '')}">
+                            <span class="reaction-emoji">${reaction.reaction}</span>
+                            <span class="reaction-count">${reaction.count}</span>
+                        </span>
+                    `;
+                });
+                reactionsHtml += '</div>';
+            }
+            
             const $message = $(`
                 <div class="message ${isSent ? 'sent' : 'received'}" data-message-id="${msg.id}" data-sender-id="${msg.sender_id}" data-is-starred="${isStarred ? 1 : 0}" data-forwarded-from-message-id="${msg.forwarded_from_message_id || ''}" data-forwarded-from-conversation-id="${msg.forwarded_from_conversation_id || ''}">
+                    ${forwardedIndicator}
                     ${!isSent ? avatar : ''}
                     <div class="message-bubble">
-                        ${forwardedIndicator}
                         ${replyHtml}
                         ${senderName}
                         ${attachmentsHtml}
-                        ${messageText}
+                        ${messageText ? this.processMessageText(messageText) : ''}
                         <div class="message-time">
                             ${time}
                             ${starIcon}
                             ${statusIcon}
                         </div>
                     </div>
+                    ${reactionsHtml}
                 </div>
             `);
             
-            $container.append($message);
+            if (prepend) {
+                $container.prepend($message);
+            } else {
+                $container.append($message);
+            }
         });
         
-        this.scrollToBottom();
+        if (!prepend) {
+            this.scrollToBottom();
+        }
         
         // Mark messages as read when they're displayed
-        if (messages.length > 0) {
+        if (messages.length > 0 && !prepend) {
             this.markMessagesAsRead(messages);
         }
+        
+        // Load reactions for all messages
+        messages.forEach(msg => {
+            if (msg.id) {
+                this.loadMessageReactions(msg.id);
+            }
+        });
+    },
+    
+    processMessageText: function(text) {
+        if (!text) return '';
+        
+        // Escape HTML first to prevent XSS
+        let escapedText = this.escapeHtml(text);
+        
+        // Detect URLs and YouTube links
+        const youtubeRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/g;
+        const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+        
+        let processedText = escapedText;
+        const urlMatches = [];
+        
+        // First, replace YouTube links with preview (before other URLs)
+        processedText = processedText.replace(youtubeRegex, (match, videoId) => {
+            const fullUrl = match.startsWith('http') ? match : `https://${match}`;
+            return `<div class="youtube-preview" data-video-id="${videoId}">
+                <div class="youtube-thumbnail">
+                    <img src="https://img.youtube.com/vi/${videoId}/maxresdefault.jpg" alt="YouTube Video" onerror="this.src='https://img.youtube.com/vi/${videoId}/hqdefault.jpg'">
+                    <div class="youtube-play-button">▶</div>
+                </div>
+                <div class="youtube-link"><a href="${fullUrl}" target="_blank" rel="noopener">${fullUrl}</a></div>
+            </div>`;
+        });
+        
+        // Then replace other URLs with link preview placeholders
+        processedText = processedText.replace(urlRegex, (url) => {
+            // Skip if this URL is already part of a YouTube preview
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                return url;
+            }
+            const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+            urlMatches.push(fullUrl);
+            return `<div class="link-preview-placeholder" data-url="${this.escapeHtml(fullUrl)}">
+                <div class="link-preview-loading">Loading preview...</div>
+            </div>`;
+        });
+        
+        // Convert newlines to <br>
+        processedText = processedText.replace(/\n/g, '<br>');
+        
+        // Return as div with message-text class
+        const result = `<div class="message-text">${processedText}</div>`;
+        
+        // Fetch link previews after rendering
+        if (urlMatches.length > 0) {
+            setTimeout(() => {
+                urlMatches.forEach(url => {
+                    this.fetchLinkPreview(url);
+                });
+            }, 100);
+        }
+        
+        return result;
+    },
+    
+    fetchLinkPreview: function(url) {
+        // Escape URL for selector
+        const escapedUrl = url.replace(/[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~]/g, '\\$&');
+        const $placeholder = $(`.link-preview-placeholder[data-url="${escapedUrl}"]`);
+        if ($placeholder.length === 0) return;
+        
+        $.ajax({
+            url: `api/linkpreview.php?url=${encodeURIComponent(url)}`,
+            method: 'GET',
+            timeout: 10000,
+            success: (response) => {
+                if (response.success && response.preview) {
+                    const preview = response.preview;
+                    const previewHtml = `
+                        <div class="link-preview-card" data-url="${this.escapeHtml(preview.url)}">
+                            ${preview.image ? `
+                                <div class="link-preview-image">
+                                    <img src="${this.escapeHtml(preview.image)}" alt="${this.escapeHtml(preview.title || '')}" onerror="this.parentElement.style.display='none'">
+                                </div>
+                            ` : ''}
+                            <div class="link-preview-content">
+                                ${preview.site_name ? `<div class="link-preview-site">${this.escapeHtml(preview.site_name)}</div>` : ''}
+                                <div class="link-preview-title">
+                                    <a href="${this.escapeHtml(preview.url)}" target="_blank" rel="noopener">${this.escapeHtml(preview.title || preview.url)}</a>
+                                </div>
+                                ${preview.description ? `<div class="link-preview-description">${this.escapeHtml(preview.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                    $placeholder.replaceWith(previewHtml);
+                } else {
+                    // Fallback to simple link if preview fails
+                    $placeholder.replaceWith(`<a href="${this.escapeHtml(url)}" target="_blank" rel="noopener" class="message-link">${this.escapeHtml(url)}</a>`);
+                }
+            },
+            error: () => {
+                // Fallback to simple link on error
+                $placeholder.replaceWith(`<a href="${this.escapeHtml(url)}" target="_blank" rel="noopener" class="message-link">${this.escapeHtml(url)}</a>`);
+            }
+        });
     },
     
     markMessagesAsRead: function(messages) {
@@ -949,6 +1190,15 @@ const App = {
             case 'new_message':
                 if (data.conversation_id == this.currentConversation) {
                     this.renderMessages([data.message]);
+                } else {
+                    // Show notification for messages in other conversations
+                    const senderName = data.message.sender_name || 'Someone';
+                    const messageText = data.message.message || (data.message.attachments && data.message.attachments.length > 0 ? 'Sent an attachment' : 'Sent a message');
+                    this.showBrowserNotification(
+                        senderName,
+                        messageText.length > 50 ? messageText.substring(0, 50) + '...' : messageText,
+                        data.message.sender_avatar
+                    );
                 }
                 this.loadConversations();
                 break;
@@ -995,6 +1245,44 @@ const App = {
         // Attach file button
         $('#attachBtn').on('click', () => {
             $('#fileInput').click();
+        });
+        
+        // Emoji picker for message input
+        $('#emojiBtn').on('click', (e) => {
+            e.stopPropagation();
+            const $picker = $('#emojiPicker');
+            if ($picker.is(':visible')) {
+                $picker.hide();
+            } else {
+                this.initEmojiPicker();
+                $picker.show();
+            }
+        });
+        
+        // Close emoji picker on click outside
+        $(document).on('click', (e) => {
+            if (!$(e.target).closest('#emojiPicker, #emojiBtn').length) {
+                $('#emojiPicker').hide();
+            }
+        });
+        
+        // Emoji picker category buttons
+        $(document).on('click', '.emoji-category-btn', (e) => {
+            e.stopPropagation();
+            const category = $(e.currentTarget).data('category');
+            $('.emoji-category-btn').removeClass('active');
+            $(e.currentTarget).addClass('active');
+            this.loadEmojiCategory(category);
+        });
+        
+        // Emoji selection
+        $(document).on('click', '.emoji-item', (e) => {
+            e.stopPropagation();
+            const emoji = $(e.currentTarget).text();
+            const $input = $('#messageInput');
+            const currentValue = $input.val();
+            $input.val(currentValue + emoji);
+            $input.focus();
         });
         
         // File input change
@@ -1087,6 +1375,63 @@ const App = {
                 e.preventDefault();
                 this.sendMessage();
             }
+        });
+        
+        // Image viewer
+        $(document).on('click', '.message-image', (e) => {
+            const $img = $(e.currentTarget);
+            const imageUrl = $img.data('image-url') || $img.attr('src');
+            const imageName = $img.data('image-name') || $img.attr('alt') || 'Image';
+            this.openImageViewer(imageUrl, imageName);
+        });
+        
+        $('#closeImageViewerModal').on('click', () => {
+            $('#imageViewerModal').removeClass('active');
+        });
+        
+        // Close image viewer on background click
+        $('#imageViewerModal').on('click', (e) => {
+            if ($(e.target).hasClass('modal')) {
+                $('#imageViewerModal').removeClass('active');
+            }
+        });
+        
+        // YouTube preview click handler
+        $(document).on('click', '.youtube-preview', function(e) {
+            e.preventDefault();
+            const videoId = $(this).data('video-id');
+            if (videoId) {
+                window.open(`https://www.youtube.com/watch?v=${videoId}`, '_blank');
+            }
+        });
+        
+        // Link preview card click handler
+        $(document).on('click', '.link-preview-card', function(e) {
+            if ($(e.target).is('a')) return; // Let anchor tags handle their own clicks
+            const url = $(this).data('url') || $(this).find('.link-preview-title a').attr('href');
+            if (url) {
+                window.open(url, '_blank');
+            }
+        });
+        
+        // Mobile menu toggle
+        $('#mobileMenuToggle').on('click', () => {
+            $('#sidebar').toggleClass('active');
+        });
+        
+        // Close sidebar when clicking outside on mobile
+        $(document).on('click', (e) => {
+            if ($(window).width() <= 768) {
+                if (!$(e.target).closest('#sidebar, #mobileMenuToggle').length && $('#sidebar').hasClass('active')) {
+                    $('#sidebar').removeClass('active');
+                }
+            }
+        });
+        
+        // Mobile bottom navigation
+        $('.mobile-bottom-nav .nav-item').on('click', function() {
+            const section = $(this).data('section');
+            App.switchMobileSection(section);
         });
         
         // New chat
@@ -1396,6 +1741,63 @@ const App = {
             this.hideContextMenu();
         });
         
+        // Reaction events
+        $(document).on('click', '.message-reaction', (e) => {
+            e.stopPropagation();
+            const $reaction = $(e.currentTarget);
+            const messageId = $reaction.data('message-id');
+            const reaction = $reaction.data('reaction');
+            const isMyReaction = $reaction.hasClass('my-reaction');
+            
+            if (isMyReaction) {
+                this.removeReaction(messageId, reaction);
+            } else {
+                this.addReaction(messageId, reaction);
+            }
+        });
+        
+        // Long press or double click on message to show reaction picker
+        let messageLongPressTimer = null;
+        $(document).on('mousedown touchstart', '.message-bubble', (e) => {
+            const $message = $(e.currentTarget).closest('.message');
+            const messageId = $message.data('message-id');
+            
+            messageLongPressTimer = setTimeout(() => {
+                this.showReactionPicker(e.pageX, e.pageY, messageId);
+                messageLongPressTimer = null;
+            }, 500);
+        });
+        
+        $(document).on('mouseup touchend', '.message-bubble', () => {
+            if (messageLongPressTimer) {
+                clearTimeout(messageLongPressTimer);
+                messageLongPressTimer = null;
+            }
+        });
+        
+        $(document).on('dblclick', '.message-bubble', (e) => {
+            e.stopPropagation();
+            const $message = $(e.currentTarget).closest('.message');
+            const messageId = $message.data('message-id');
+            this.showReactionPicker(e.pageX, e.pageY, messageId);
+        });
+        
+        // Close reaction picker on click outside
+        $(document).on('click', (e) => {
+            if (!$(e.target).closest('.reaction-picker, .message-bubble').length) {
+                this.hideReactionPicker();
+            }
+        });
+        
+        // Emoji picker for reactions
+        $(document).on('click', '.reaction-picker-emoji', (e) => {
+            e.stopPropagation();
+            const emoji = $(e.currentTarget).text();
+            const messageId = $('#reactionPicker').data('message-id');
+            this.addReaction(messageId, emoji);
+            this.hideReactionPicker();
+        });
+        
         // Keyboard navigation for story viewer
         $(document).on('keydown', (e) => {
             if ($('#storyViewerModal').hasClass('active')) {
@@ -1563,6 +1965,10 @@ const App = {
                     this.loadConversations();
                     setTimeout(() => {
                         this.openConversation(response.conversation_id);
+                        // Switch to chat section on mobile if opened from mobile contacts
+                        if ($(window).width() <= 768 && $('#mobileContactsSection').hasClass('active')) {
+                            this.switchMobileSection('chat');
+                        }
                     }, 500);
                 }
             }
@@ -1620,10 +2026,13 @@ const App = {
         members.forEach(member => {
             const memberIsAdmin = member.role === 'admin';
             const canRemove = isAdmin && member.id != this.currentUser.id;
+            const isCurrentUser = member.id == this.currentUser.id;
             membersHtml += `
                 <div class="group-member-item" data-member-id="${member.id}">
                     <img src="${member.avatar || 'assets/images/default-avatar.png'}" 
-                         alt="${member.name}" class="user-avatar" onerror="this.src='assets/images/default-avatar.png'">
+                         alt="${member.name}" class="user-avatar ${!isCurrentUser ? 'clickable-user-avatar' : ''}" 
+                         data-user-id="${member.id}"
+                         onerror="this.onerror=null; this.src='assets/images/default-avatar.png';">
                     <div style="flex: 1; min-width: 0;">
                         <div class="conversation-name">${this.escapeHtml(member.name)}</div>
                         <div class="conversation-message">${member.mobile || member.email || ''}</div>
@@ -1724,7 +2133,43 @@ const App = {
                     App.removeGroupMember(memberId);
                 });
             });
+            
+            // Click on user avatar to start chat
+            $(document).off('click', '.clickable-user-avatar').on('click', '.clickable-user-avatar', function(e) {
+                e.stopPropagation();
+                const userId = $(this).data('user-id');
+                if (userId) {
+                    App.startChatWithUser(userId);
+                }
+            });
         }
+    },
+    
+    startChatWithUser: function(userId) {
+        // Close group info modal
+        $('#groupInfoModal').removeClass('active');
+        
+        // Create or find existing conversation with this user
+        $.ajax({
+            url: 'api/conversations.php?action=create',
+            method: 'POST',
+            data: {
+                type: 'single',
+                user_ids: [userId]
+            },
+            success: (response) => {
+                if (response.success) {
+                    // Open the conversation
+                    this.openConversation(response.conversation_id);
+                    this.loadConversations();
+                } else {
+                    this.showToast(response.error || 'Failed to start chat', 'error');
+                }
+            },
+            error: () => {
+                this.showToast('Error starting chat. Please try again.', 'error');
+            }
+        });
     },
     
     uploadGroupAvatar: function(file) {
@@ -2004,16 +2449,28 @@ const App = {
     },
     
     formatTime: function(datetime) {
+        // Convert to Indian Standard Time (IST)
         const date = new Date(datetime);
-        const now = new Date();
-        const diff = now - date;
+        const istDate = new Date(date.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+        const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+        const diff = now - istDate;
         
         if (diff < 60000) return 'just now';
         if (diff < 3600000) return Math.floor(diff / 60000) + 'm';
         if (diff < 86400000) return Math.floor(diff / 3600000) + 'h';
         if (diff < 604800000) return Math.floor(diff / 86400000) + 'd';
         
-        return date.toLocaleDateString();
+        // Format date in Indian format (DD/MM/YYYY or DD MMM YYYY)
+        const day = istDate.getDate();
+        const month = istDate.getMonth();
+        const year = istDate.getFullYear();
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        
+        // If same year, show DD MMM, else show DD MMM YYYY
+        if (year === now.getFullYear()) {
+            return `${day} ${months[month]}`;
+        }
+        return `${day} ${months[month]} ${year}`;
     },
     
     getUserStatus: function(user) {
@@ -3059,6 +3516,201 @@ const App = {
         return;
     },
     
+    addReaction: function(messageId, reaction) {
+        if (!messageId || !reaction) return;
+        
+        $.ajax({
+            url: 'api/messages.php?action=add_reaction',
+            method: 'POST',
+            data: {
+                message_id: messageId,
+                reaction: reaction
+            },
+            success: (response) => {
+                if (response.success) {
+                    this.loadMessageReactions(messageId);
+                } else {
+                    this.showToast(response.error || 'Failed to add reaction', 'error');
+                }
+            },
+            error: () => {
+                this.showToast('Failed to add reaction', 'error');
+            }
+        });
+    },
+    
+    removeReaction: function(messageId, reaction) {
+        if (!messageId || !reaction) return;
+        
+        $.ajax({
+            url: 'api/messages.php?action=remove_reaction',
+            method: 'POST',
+            data: {
+                message_id: messageId,
+                reaction: reaction
+            },
+            success: (response) => {
+                if (response.success) {
+                    this.loadMessageReactions(messageId);
+                } else {
+                    this.showToast(response.error || 'Failed to remove reaction', 'error');
+                }
+            },
+            error: () => {
+                this.showToast('Failed to remove reaction', 'error');
+            }
+        });
+    },
+    
+    loadMessageReactions: function(messageId) {
+        $.ajax({
+            url: `api/messages.php?action=get_reactions&message_id=${messageId}`,
+            method: 'GET',
+            success: (response) => {
+                if (response.success) {
+                    this.updateMessageReactions(messageId, response.reactions);
+                }
+            },
+            error: () => {
+                console.error('Failed to load reactions');
+            }
+        });
+    },
+    
+    updateMessageReactions: function(messageId, reactions) {
+        const $message = $(`.message[data-message-id="${messageId}"]`);
+        if ($message.length === 0) return;
+        
+        // Group reactions by emoji
+        const reactionGroups = {};
+        const myReactions = [];
+        
+        reactions.forEach(reaction => {
+            if (!reactionGroups[reaction.reaction]) {
+                reactionGroups[reaction.reaction] = {
+                    reaction: reaction.reaction,
+                    count: 0,
+                    users: []
+                };
+            }
+            reactionGroups[reaction.reaction].count++;
+            reactionGroups[reaction.reaction].users.push(reaction.user_name);
+            
+            if (reaction.user_id == this.currentUser.id) {
+                myReactions.push(reaction.reaction);
+            }
+        });
+        
+        // Build reactions HTML
+        let reactionsHtml = '';
+        const reactionList = Object.values(reactionGroups);
+        
+        if (reactionList.length > 0) {
+            reactionsHtml = '<div class="message-reactions">';
+            reactionList.forEach(group => {
+                const isMyReaction = myReactions.includes(group.reaction);
+                const userNames = group.users.join(', ');
+                reactionsHtml += `
+                    <span class="message-reaction ${isMyReaction ? 'my-reaction' : ''}" 
+                          data-reaction="${this.escapeHtml(group.reaction)}" 
+                          data-message-id="${messageId}"
+                          title="${this.escapeHtml(userNames)}">
+                        <span class="reaction-emoji">${group.reaction}</span>
+                        <span class="reaction-count">${group.count}</span>
+                    </span>
+                `;
+            });
+            reactionsHtml += '</div>';
+        }
+        
+        // Update or remove reactions container
+        const $existingReactions = $message.find('.message-reactions');
+        if (reactionsHtml) {
+            if ($existingReactions.length > 0) {
+                $existingReactions.replaceWith(reactionsHtml);
+            } else {
+                $message.append(reactionsHtml);
+            }
+        } else {
+            $existingReactions.remove();
+        }
+    },
+    
+    showReactionPicker: function(x, y, messageId) {
+        // Create reaction picker if it doesn't exist
+        if ($('#reactionPicker').length === 0) {
+            const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+            let pickerHtml = '<div class="reaction-picker" id="reactionPicker">';
+            commonReactions.forEach(emoji => {
+                pickerHtml += `<span class="reaction-picker-emoji" data-emoji="${emoji}">${emoji}</span>`;
+            });
+            pickerHtml += '</div>';
+            $('body').append(pickerHtml);
+        }
+        
+        const $picker = $('#reactionPicker');
+        $picker.data('message-id', messageId);
+        
+        // Position picker
+        const pickerWidth = 200;
+        const pickerHeight = 50;
+        let left = x - pickerWidth / 2;
+        let top = y - pickerHeight - 10;
+        
+        // Keep within viewport
+        if (left < 10) left = 10;
+        if (left + pickerWidth > $(window).width() - 10) {
+            left = $(window).width() - pickerWidth - 10;
+        }
+        if (top < 10) top = y + 10;
+        
+        $picker.css({
+            left: left + 'px',
+            top: top + 'px'
+        }).addClass('active');
+        
+        // Auto-hide after 3 seconds
+        clearTimeout(this.reactionPickerTimer);
+        this.reactionPickerTimer = setTimeout(() => {
+            this.hideReactionPicker();
+        }, 3000);
+    },
+    
+    hideReactionPicker: function() {
+        $('#reactionPicker').removeClass('active');
+        clearTimeout(this.reactionPickerTimer);
+    },
+    
+    initEmojiPicker: function() {
+        const $pickerBody = $('#emojiPickerBody');
+        if ($pickerBody.children().length > 0) {
+            return; // Already initialized
+        }
+        
+        // Load default category
+        this.loadEmojiCategory('smileys');
+    },
+    
+    loadEmojiCategory: function(category) {
+        const $pickerBody = $('#emojiPickerBody');
+        $pickerBody.empty();
+        
+        const emojiMap = {
+            smileys: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶', '😶‍🌫️', '😵', '😵‍💫', '🤯', '🤠', '🥳', '😎', '🤓', '🧐'],
+            gestures: ['👋', '🤚', '🖐', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💪', '🦾', '🦿', '🦵', '🦶', '👂', '🦻', '👃', '🧠', '🫀', '🫁', '🦷', '🦴', '👀', '👁️', '👅', '👄'],
+            hearts: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '❤️‍🩹', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '🛐', '⛎', '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '🆔', '⚛️'],
+            objects: ['🎉', '🎊', '🎈', '🎁', '🎀', '🎂', '🎃', '🎄', '🎆', '🎇', '✨', '🎊', '🎋', '🎍', '🎎', '🎏', '🎐', '🎑', '🎀', '🎁', '🎗️', '🎟️', '🎫', '🎖️', '🏆', '🏅', '🥇', '🥈', '🥉', '⚽', '⚾', '🥎', '🏀', '🏐', '🏈', '🏉', '🎾', '🎱', '🎳', '🏓', '🏸', '🥊', '🥋', '🥅', '⛳', '🎯', '🎣', '🎽', '🎿', '⛷️', '🏂', '🏋️', '🤼', '🤸', '🤺', '⛹️', '🤾', '🤹', '🧘', '🏄', '🏊', '🚣', '🧗', '🚵', '🚴', '🏇', '🤹', '🧘', '🏄', '🏊', '🚣', '🧗', '🚵', '🚴', '🏇'],
+            symbols: ['✅', '❌', '⭕', '❓', '❔', '❗', '❕', '💯', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '⚫', '⚪', '🟤', '🔶', '🔷', '🔸', '🔹', '🔺', '🔻', '💠', '🔘', '🔳', '🔲', '▪️', '▫️', '◾', '◽', '◼️', '◻️', '🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '⬛', '⬜', '🟫', '🔈', '🔇', '🔉', '🔊', '🔔', '🔕', '📣', '📢', '💬', '💭', '🗯️', '♠️', '♣️', '♥️', '♦️', '🃏', '🎴', '🀄', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚', '🕛']
+        };
+        
+        const emojis = emojiMap[category] || emojiMap.smileys;
+        
+        emojis.forEach(emoji => {
+            const $emoji = $('<span class="emoji-item">' + emoji + '</span>');
+            $pickerBody.append($emoji);
+        });
+    },
+    
     deleteMessageConfirmed: function(messageId) {
         
         $.ajax({
@@ -3141,6 +3793,328 @@ const App = {
                 this.showToast('Error unstarring message. Please try again.', 'error');
             }
         });
+    },
+    
+    openImageViewer: function(imageUrl, imageName) {
+        $('#viewerImage').attr('src', imageUrl);
+        $('#viewerImageName').text(imageName);
+        $('#imageViewerModal').addClass('active');
+    },
+    
+    switchMobileSection: function(section) {
+        // Only show bottom nav on mobile
+        if ($(window).width() > 768) {
+            return;
+        }
+        
+        // Update active nav item
+        $('.mobile-bottom-nav .nav-item').removeClass('active');
+        $(`.mobile-bottom-nav .nav-item[data-section="${section}"]`).addClass('active');
+        
+        // Hide all sections
+        $('.mobile-section').removeClass('active');
+        $('#chatContainer').removeClass('mobile-section-active');
+        
+        // Show selected section
+        switch(section) {
+            case 'chat':
+                $('#chatContainer').addClass('mobile-section-active');
+                $('#sidebar').removeClass('active');
+                break;
+            case 'contacts':
+                this.showMobileContacts();
+                break;
+            case 'stories':
+                this.showMobileStories();
+                break;
+            case 'profile':
+                window.location.href = 'profile.php';
+                return;
+        }
+    },
+    
+    showMobileContacts: function() {
+        // Create contacts section if it doesn't exist
+        if ($('#mobileContactsSection').length === 0) {
+            $('body').append(`
+                <div class="mobile-section mobile-contacts-section" id="mobileContactsSection">
+                    <div class="mobile-section-header">
+                        <div class="mobile-header-top">
+                            <h2>Contacts</h2>
+                            <button class="mobile-add-contact-btn" id="mobileAddContactBtn" title="Add New Contact">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="mobile-search-box">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.35-4.35"></path>
+                            </svg>
+                            <input type="text" id="mobileContactsSearch" placeholder="Search contacts...">
+                        </div>
+                    </div>
+                    <div class="mobile-contacts-list" id="mobileContactsList">
+                        <div class="mobile-loading-state">Loading contacts...</div>
+                    </div>
+                </div>
+            `);
+            
+            // Bind search
+            $('#mobileContactsSearch').on('input', (e) => {
+                const query = $(e.target).val().trim();
+                if (query) {
+                    this.searchMobileContacts(query);
+                } else {
+                    this.loadMobileContacts();
+                }
+            });
+            
+            // Bind add contact button
+            $('#mobileAddContactBtn').on('click', () => {
+                this.openNewChatFromMobile();
+            });
+        }
+        
+        $('#mobileContactsSection').addClass('active');
+        
+        // Load contacts
+        this.loadMobileContacts();
+    },
+    
+    openNewChatFromMobile: function() {
+        // Open the new chat modal and switch to single chat tab
+        $('#newChatModal').addClass('active');
+        this.resetNewChatModal();
+        $('.chat-type-tabs .tab-btn[data-type="single"]').click();
+        $('#userSearchInput').focus();
+    },
+    
+    searchMobileContacts: function(query) {
+        $.ajax({
+            url: `api/users.php?action=search&q=${encodeURIComponent(query)}`,
+            method: 'GET',
+            success: (response) => {
+                if (response.success) {
+                    this.renderMobileContacts(response.users || []);
+                } else {
+                    $('#mobileContactsList').html('<div class="mobile-empty-state">No contacts found</div>');
+                }
+            },
+            error: () => {
+                $('#mobileContactsList').html('<div class="mobile-empty-state">Error searching contacts</div>');
+            }
+        });
+    },
+    
+    loadMobileContacts: function() {
+        $('#mobileContactsList').html('<div class="mobile-loading-state">Loading contacts...</div>');
+        
+        $.ajax({
+            url: 'api/users.php?action=list',
+            method: 'GET',
+            success: (response) => {
+                if (response.success) {
+                    this.renderMobileContacts(response.users || []);
+                } else {
+                    $('#mobileContactsList').html('<div class="mobile-empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Failed to load contacts</div></div>');
+                }
+            },
+            error: () => {
+                $('#mobileContactsList').html('<div class="mobile-empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Error loading contacts</div></div>');
+            }
+        });
+    },
+    
+    renderMobileContacts: function(users) {
+        const $list = $('#mobileContactsList');
+        $list.empty();
+        
+        if (users.length === 0) {
+            $list.html('<div class="mobile-empty-state"><div class="empty-icon">👥</div><div class="empty-text">No contacts found</div></div>');
+            return;
+        }
+        
+        // Filter out current user
+        const otherUsers = users.filter(u => u.id != this.currentUser.id);
+        
+        if (otherUsers.length === 0) {
+            $list.html('<div class="mobile-empty-state"><div class="empty-icon">👥</div><div class="empty-text">No contacts available</div></div>');
+            return;
+        }
+        
+        // Group contacts by first letter
+        const grouped = {};
+        otherUsers.forEach(user => {
+            const firstLetter = (user.name || 'Unknown').charAt(0).toUpperCase();
+            if (!grouped[firstLetter]) {
+                grouped[firstLetter] = [];
+            }
+            grouped[firstLetter].push(user);
+        });
+        
+        // Sort letters
+        const sortedLetters = Object.keys(grouped).sort();
+        
+        // Render grouped contacts
+        sortedLetters.forEach(letter => {
+            const $section = $(`
+                <div class="mobile-contacts-group">
+                    <div class="mobile-contacts-group-header">${letter}</div>
+                    <div class="mobile-contacts-group-items"></div>
+                </div>
+            `);
+            
+            const $itemsContainer = $section.find('.mobile-contacts-group-items');
+            
+            // Sort users in this group by name
+            grouped[letter].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            
+            grouped[letter].forEach(user => {
+                // Format avatar URL
+                let avatarUrl = user.avatar || 'assets/images/default-avatar.png';
+                
+                // Get user status
+                const status = this.getUserStatus(user);
+                const statusIcon = status === 'online' ? '<span class="status-indicator online"></span>' : 
+                                 status === 'recently' ? '<span class="status-indicator recently"></span>' : '';
+                
+                const $item = $(`
+                    <div class="mobile-contact-item" data-user-id="${user.id}">
+                        <div class="mobile-contact-avatar-wrapper">
+                            <img src="${avatarUrl}" 
+                                 alt="${this.escapeHtml(user.name)}" 
+                                 class="mobile-contact-avatar"
+                                 onerror="this.src='assets/images/default-avatar.png'">
+                            ${statusIcon}
+                        </div>
+                        <div class="mobile-contact-info">
+                            <div class="mobile-contact-name">${this.escapeHtml(user.name || 'Unknown')}</div>
+                            <div class="mobile-contact-status">${this.escapeHtml(user.mobile || user.email || '')}</div>
+                        </div>
+                        <div class="mobile-contact-action">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                `);
+                
+                $item.on('click', () => {
+                    this.startChatWithUser(user.id);
+                    this.switchMobileSection('chat');
+                });
+                
+                $itemsContainer.append($item);
+            });
+            
+            $list.append($section);
+        });
+    },
+    
+    showMobileStories: function() {
+        // Create stories section if it doesn't exist
+        if ($('#mobileStoriesSection').length === 0) {
+            $('body').append(`
+                <div class="mobile-section mobile-stories-section" id="mobileStoriesSection">
+                    <div class="mobile-section-header">
+                        <h2>Stories</h2>
+                    </div>
+                    <div class="mobile-stories-content">
+                        <div class="mobile-stories-grid" id="mobileStoriesContainer">
+                            <!-- Stories will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
+        
+        $('#mobileStoriesSection').addClass('active');
+        
+        // Render stories in mobile view
+        this.renderMobileStories();
+    },
+    
+    renderMobileStories: function() {
+        const $container = $('#mobileStoriesContainer');
+        if ($container.length === 0) return;
+        
+        $container.empty();
+        
+        // Add "My Story" option first
+        const myStories = this.stories.find(s => s.is_my_story) || { 
+            user_id: this.currentUser?.id, 
+            user_name: this.currentUser?.name || 'You', 
+            user_avatar: this.currentUser?.avatar || 'assets/images/default-avatar.png', 
+            stories: [] 
+        };
+        const hasMyStories = myStories.stories && myStories.stories.length > 0;
+        const storyCount = hasMyStories ? myStories.stories.length : 0;
+        
+        const $myStory = $(`
+            <div class="mobile-story-card ${!hasMyStories ? 'add-story-card' : ''}" 
+                 data-user-id="${myStories.user_id}" 
+                 data-is-my-story="true">
+                <div class="mobile-story-avatar-wrapper">
+                    <img src="${myStories.user_avatar || 'assets/images/default-avatar.png'}" 
+                         alt="${this.escapeHtml(myStories.user_name)}" 
+                         class="mobile-story-avatar" 
+                         onerror="this.src='assets/images/default-avatar.png'">
+                    ${!hasMyStories ? '<div class="mobile-add-story-icon">+</div>' : ''}
+                    ${hasMyStories ? `<div class="mobile-story-badge">${storyCount}</div>` : ''}
+                </div>
+                <div class="mobile-story-info">
+                    <div class="mobile-story-name">${this.escapeHtml(myStories.user_name)}</div>
+                    ${hasMyStories ? '<div class="mobile-story-count">' + storyCount + ' story' + (storyCount > 1 ? 'ies' : '') + '</div>' : '<div class="mobile-story-hint">Tap to create</div>'}
+                </div>
+            </div>
+        `);
+        
+        $myStory.on('click', () => {
+            if (!hasMyStories) {
+                this.openCreateStoryModal();
+            } else {
+                this.viewStories(myStories);
+            }
+        });
+        
+        $container.append($myStory);
+        
+        // Add other users' stories
+        this.stories.forEach(storyGroup => {
+            if (!storyGroup.is_my_story && storyGroup.stories && storyGroup.stories.length > 0) {
+                const hasUnviewed = storyGroup.stories.some(s => !s.is_viewed);
+                const storyCount = storyGroup.stories.length;
+                
+                const $story = $(`
+                    <div class="mobile-story-card ${hasUnviewed ? 'unviewed-story' : ''}" 
+                         data-user-id="${storyGroup.user_id}">
+                        <div class="mobile-story-avatar-wrapper">
+                            <img src="${storyGroup.user_avatar || 'assets/images/default-avatar.png'}" 
+                                 alt="${this.escapeHtml(storyGroup.user_name)}" 
+                                 class="mobile-story-avatar" 
+                                 onerror="this.src='assets/images/default-avatar.png'">
+                            ${hasUnviewed ? '<div class="mobile-story-unviewed-indicator"></div>' : ''}
+                            <div class="mobile-story-badge">${storyCount}</div>
+                        </div>
+                        <div class="mobile-story-info">
+                            <div class="mobile-story-name">${this.escapeHtml(storyGroup.user_name)}</div>
+                            <div class="mobile-story-count">${storyCount} story${storyCount > 1 ? 'ies' : ''}</div>
+                        </div>
+                    </div>
+                `);
+                
+                $story.on('click', () => this.viewStories(storyGroup));
+                $container.append($story);
+            }
+        });
+        
+        // If no stories, show message
+        if ($container.children().length === 0) {
+            $container.html('<div class="mobile-empty-state"><div class="empty-icon">📸</div><div class="empty-text">No stories available</div><div class="empty-hint">Create your first story to get started!</div></div>');
+        }
     },
     
 };

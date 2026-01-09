@@ -11,15 +11,30 @@ if (!$user) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#25d366">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Samvad">
     <title>Samvad - Simple Business Chat</title>
     <link rel="icon" type="image/png" href="assets/images/logo.png">
+    <link rel="apple-touch-icon" href="assets/images/logo.png">
+    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
-    <div class="chat-container">
+    <div class="chat-container" id="chatContainer">
+        <!-- Mobile Menu Toggle -->
+        <button class="mobile-menu-toggle" id="mobileMenuToggle" title="Menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+        
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="user-info">
                     <img src="<?php echo htmlspecialchars($user['avatar'] ?: 'assets/images/default-avatar.png'); ?>" 
@@ -436,10 +451,59 @@ if (!$user) {
     <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container"></div>
     
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-bottom-nav" id="mobileBottomNav">
+        <button class="nav-item active" data-section="chat" title="Chats">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>Chats</span>
+        </button>
+        <button class="nav-item" data-section="contacts" title="Contacts">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span>Contacts</span>
+        </button>
+        <button class="nav-item" data-section="stories" title="Stories">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="6"></circle>
+            </svg>
+            <span>Stories</span>
+        </button>
+        <button class="nav-item" data-section="profile" title="Profile">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span>Profile</span>
+        </button>
+    </div>
+    
+    <!-- Image Viewer Modal -->
+    <div class="modal" id="imageViewerModal">
+        <div class="modal-content image-viewer-modal">
+            <div class="image-viewer-header">
+                <button class="close-btn" id="closeImageViewerModal">&times;</button>
+            </div>
+            <div class="image-viewer-body">
+                <img id="viewerImage" src="" alt="" class="viewer-image">
+                <div class="image-viewer-info">
+                    <span id="viewerImageName"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <script>
         // WebSocket Configuration
         const WS_HOST = '<?php echo WS_HOST; ?>';
         const WS_PORT = <?php echo WS_PORT; ?>;
+        const BASE_URL = '<?php echo BASE_URL; ?>';
     </script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="assets/js/app.js"></script>

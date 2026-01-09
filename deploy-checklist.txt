@@ -1,0 +1,170 @@
+UBUNTU SERVER + AAPANEL DEPLOYMENT CHECKLIST
+=============================================
+
+BEFORE DEPLOYMENT:
+------------------
+[ ] Backup current production site (if any)
+[ ] Ensure you have SSH access to server
+[ ] Have aaPanel login credentials ready
+[ ] Have domain DNS configured to point to server IP
+
+STEP 1: UPLOAD FILES
+--------------------
+[ ] Upload all project files to /www/wwwroot/yourdomain.com
+[ ] Ensure file structure is correct
+[ ] Verify all files uploaded successfully
+
+STEP 2: CONFIGURE DATABASE
+--------------------------
+[ ] Login to aaPanel
+[ ] Go to Database → MySQL Management
+[ ] Create new database (note the name)
+[ ] Create new MySQL user (note username and password)
+[ ] Grant all privileges to user for the database
+[ ] Open phpMyAdmin
+[ ] Select your database
+[ ] Import chat.sql file
+[ ] Import all other SQL update files:
+    [ ] database_update.sql
+    [ ] database_message_reactions_update.sql
+    [ ] database_message_stars_update.sql
+    [ ] database_status_update.sql
+    [ ] database_forward_reply_update.sql
+
+STEP 3: UPDATE CONFIG.PHP
+-------------------------
+[ ] Copy config.production.php.example to config.php
+[ ] Update DB_HOST (usually 'localhost')
+[ ] Update DB_USER (your MySQL username)
+[ ] Update DB_PASS (your MySQL password)
+[ ] Update DB_NAME (your database name)
+[ ] Update BASE_URL (your domain with https://)
+[ ] Update WS_HOST (your domain or IP)
+[ ] Update WS_PORT (usually 8080)
+[ ] Update timezone
+[ ] Verify error_reporting is set to 0
+[ ] Verify display_errors is set to 0
+
+STEP 4: SET FILE PERMISSIONS
+-----------------------------
+[ ] SSH into server
+[ ] cd /www/wwwroot/yourdomain.com
+[ ] chmod -R 755 .
+[ ] chmod -R 755 uploads/
+[ ] chown -R www:www uploads/
+[ ] chmod +x websocket/server.php
+
+STEP 5: INSTALL COMPOSER DEPENDENCIES
+-------------------------------------
+[ ] cd /www/wwwroot/yourdomain.com
+[ ] composer install
+[ ] Verify vendor/ directory exists
+
+STEP 6: SETUP WEBSOCKET SERVICE
+--------------------------------
+[ ] Create systemd service file (see DEPLOYMENT.md)
+[ ] sudo systemctl daemon-reload
+[ ] sudo systemctl enable chat-websocket
+[ ] sudo systemctl start chat-websocket
+[ ] sudo systemctl status chat-websocket (verify running)
+
+STEP 7: CONFIGURE FIREWALL
+---------------------------
+[ ] sudo ufw allow 8080/tcp
+[ ] sudo ufw allow 80/tcp
+[ ] sudo ufw allow 443/tcp
+[ ] sudo ufw status (verify ports open)
+
+STEP 8: CONFIGURE SSL/HTTPS
+---------------------------
+[ ] In aaPanel: Website → Your Domain → SSL
+[ ] Enable Let's Encrypt SSL
+[ ] Enable Force HTTPS
+[ ] Verify certificate is active
+
+STEP 9: CONFIGURE PHP SETTINGS
+------------------------------
+[ ] In aaPanel: App Store → PHP → Settings
+[ ] Verify PHP 7.4+ is installed
+[ ] Check required extensions enabled:
+    [ ] mysqli
+    [ ] mbstring
+    [ ] json
+    [ ] openssl
+    [ ] pdo
+    [ ] pdo_mysql
+[ ] Update PHP limits if needed:
+    [ ] upload_max_filesize = 25M
+    [ ] post_max_size = 25M
+    [ ] max_execution_time = 300
+
+STEP 10: TEST APPLICATION
+-------------------------
+[ ] Visit https://yourdomain.com
+[ ] Test user registration/login
+[ ] Test sending messages
+[ ] Test file uploads
+[ ] Test WebSocket connection (check browser console)
+[ ] Test real-time messaging
+[ ] Test on mobile device
+[ ] Test all features (stories, reactions, etc.)
+
+STEP 11: MONITORING & MAINTENANCE
+----------------------------------
+[ ] Set up log monitoring
+[ ] Configure automatic backups in aaPanel
+[ ] Set up cron job for backups (if needed)
+[ ] Document all credentials securely
+[ ] Test backup restoration process
+
+STEP 12: SECURITY HARDENING
+----------------------------
+[ ] Verify error_reporting = 0
+[ ] Verify display_errors = 0
+[ ] Verify HTTPS is enforced
+[ ] Verify file permissions are correct
+[ ] Change all default passwords
+[ ] Review and update .htaccess if using Apache
+[ ] Set up fail2ban (optional but recommended)
+[ ] Configure firewall rules properly
+
+TROUBLESHOOTING COMMANDS:
+-------------------------
+# Check WebSocket status
+sudo systemctl status chat-websocket
+
+# Check WebSocket logs
+sudo journalctl -u chat-websocket -f
+
+# Check if port 8080 is open
+sudo netstat -tulpn | grep 8080
+
+# Check if WebSocket process is running
+ps aux | grep server.php
+
+# Check PHP error logs
+tail -f /www/wwwroot/yourdomain.com/logs/php-errors.log
+
+# Test WebSocket connection
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://yourdomain.com:8080
+
+# Check database connection
+mysql -u your_db_user -p your_db_name
+
+# Check file permissions
+ls -la /www/wwwroot/yourdomain.com/uploads/
+
+# Restart WebSocket service
+sudo systemctl restart chat-websocket
+
+# Restart web server (if needed)
+sudo systemctl restart nginx  # or apache2
+
+QUICK REFERENCE:
+----------------
+Web Root: /www/wwwroot/yourdomain.com
+Web User: www
+Config File: /www/wwwroot/yourdomain.com/config.php
+WebSocket Service: chat-websocket
+WebSocket Port: 8080
+Database: MySQL (via aaPanel)

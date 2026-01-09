@@ -12,6 +12,9 @@ switch ($action) {
     case 'search':
         searchUsers();
         break;
+    case 'list':
+        listUsers();
+        break;
     case 'profile':
         getProfile();
         break;
@@ -42,6 +45,38 @@ function searchUsers() {
     $users = [];
     
     while ($row = mysqli_fetch_assoc($result)) {
+        // Format avatar URL
+        if (!empty($row['avatar'])) {
+            if (strpos($row['avatar'], 'http') !== 0) {
+                $row['avatar'] = BASE_URL . '/' . ltrim($row['avatar'], '/');
+            }
+        }
+        $users[] = $row;
+    }
+    
+    sendJSON(['success' => true, 'users' => $users]);
+}
+
+function listUsers() {
+    global $conn, $user;
+    
+    $query = "SELECT id, uuid, name, mobile, email, avatar, status, status_text, last_seen 
+             FROM users 
+             WHERE id != {$user['id']} 
+             AND status = 'active'
+             ORDER BY name ASC
+             LIMIT 100";
+    
+    $result = mysqli_query($conn, $query);
+    $users = [];
+    
+    while ($row = mysqli_fetch_assoc($result)) {
+        // Format avatar URL
+        if (!empty($row['avatar'])) {
+            if (strpos($row['avatar'], 'http') !== 0) {
+                $row['avatar'] = BASE_URL . '/' . ltrim($row['avatar'], '/');
+            }
+        }
         $users[] = $row;
     }
     
